@@ -33,18 +33,49 @@ kubectl wait --for=condition=ready pod/"${SPIRE_SERVER_POD}" -n spire-server --t
 	echo "[deploy] Warning: SPIRE server pod may not be fully ready"
 }
 
-# Function to get all attested agent IDs
-get_agent_ids() {
-	kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
-		/opt/spire/bin/spire-server agent list 2>/dev/null | \
-		grep "SPIFFE ID" | awk '{print $4}' || echo ""
+# Node alias SPIFFE ID (represents all agents in the cluster)
+NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
+
+# Function to ensure node alias exists
+ensure_node_alias() {
+	echo "[registration] Ensuring node alias exists..."
+	
+	# Check if node alias already exists
+	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
+		/opt/spire/bin/spire-server entry show -spiffeID "${NODE_ALIAS_ID}" 2>/dev/null | grep -q "${NODE_ALIAS_ID}"; then
+		echo "[registration] Node alias ${NODE_ALIAS_ID} already exists"
+		return 0
+	fi
+	
+	# Create node registration entry (node alias) for all agents in the cluster
+	# This uses k8s_psat cluster selector to match all agents
+	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
+		/opt/spire/bin/spire-server entry create \
+		-node \
+		-spiffeID "${NODE_ALIAS_ID}" \
+		-selector "k8s_psat:cluster:spiffe-helper" 2>/dev/null; then
+		echo "[registration] Created node alias: ${NODE_ALIAS_ID}"
+		return 0
+	else
+		echo "[registration] Warning: Failed to create node alias, but continuing..."
+		return 1
+	fi
 }
 
-# Function to register a workload entry for a specific parent (agent)
-register_entry_for_parent() {
+# Function to register a workload entry
+register_entry() {
 	local spiffe_id="$1"
 	local parent_id="$2"
 	local selectors="$3"
+	
+	echo "[registration] Registering entry: ${spiffe_id}"
+	
+	# Check if entry already exists
+	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
+		/opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" 2>/dev/null | grep -q "${spiffe_id}"; then
+		echo "[registration] Entry ${spiffe_id} already exists, skipping..."
+		return 0
+	fi
 	
 	# Convert comma-separated selectors to multiple -selector flags
 	local selector_flags=""
@@ -53,85 +84,35 @@ register_entry_for_parent() {
 		selector_flags="${selector_flags} -selector ${selector}"
 	done
 	
+	# If parent_id contains a wildcard, use node alias instead
+	if [[ "${parent_id}" == *"*"* ]]; then
+		parent_id="${NODE_ALIAS_ID}"
+		echo "[registration] Using node alias as parent: ${parent_id}"
+	fi
+	
 	# Create the entry
 	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
 		/opt/spire/bin/spire-server entry create \
 		-spiffeID "${spiffe_id}" \
 		-parentID "${parent_id}" \
 		${selector_flags} 2>/dev/null; then
+		echo "[registration] Successfully registered entry: ${spiffe_id}"
 		return 0
 	else
+		echo "[registration] Warning: Failed to create entry ${spiffe_id}"
 		return 1
 	fi
 }
 
-# Function to register a workload entry (handles wildcard parent IDs)
-register_entry() {
-	local spiffe_id="$1"
-	local parent_id="$2"
-	local selectors="$3"
-	
-	echo "[registration] Registering entry: ${spiffe_id}"
-	
-	# Check if entry already exists (for any parent)
-	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
-		/opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" 2>/dev/null | grep -q "${spiffe_id}"; then
-		echo "[registration] Entry ${spiffe_id} already exists, skipping..."
-		return 0
-	fi
-	
-	# If parent_id contains a wildcard, register for all agents
-	if [[ "${parent_id}" == *"*"* ]]; then
-		echo "[registration] Parent ID contains wildcard, discovering agents..."
-		local agent_ids
-		agent_ids=$(get_agent_ids)
-		
-		if [ -z "${agent_ids}" ]; then
-			echo "[registration] Warning: No attested agents found. Cannot register entry."
-			return 1
-		fi
-		
-		# Extract the base parent ID pattern (everything before the *)
-		local parent_base="${parent_id%%\**}"
-		local parent_suffix="${parent_id#*\*}"
-		
-		local registered_count=0
-		while IFS= read -r agent_id; do
-			[[ -z "${agent_id}" ]] && continue
-			
-			# For k8s_psat, the agent ID format is: spiffe://<trust-domain>/spire/agent/k8s_psat/<cluster>/<node-id>
-			# We can use the agent_id directly as the parent
-			if register_entry_for_parent "${spiffe_id}" "${agent_id}" "${selectors}"; then
-				echo "[registration] Successfully registered entry ${spiffe_id} for agent ${agent_id}"
-				((registered_count++)) || true
-			else
-				echo "[registration] Warning: Failed to register entry ${spiffe_id} for agent ${agent_id}"
-			fi
-		done <<< "${agent_ids}"
-		
-		if [ "${registered_count}" -gt 0 ]; then
-			return 0
-		else
-			return 1
-		fi
-	else
-		# Parent ID is specific, register directly
-		if register_entry_for_parent "${spiffe_id}" "${parent_id}" "${selectors}"; then
-			echo "[registration] Successfully registered entry: ${spiffe_id}"
-			return 0
-		else
-			echo "[registration] Warning: Failed to create entry ${spiffe_id}"
-			return 1
-		fi
-	fi
-}
+# Ensure node alias exists (represents all agents in the cluster)
+ensure_node_alias
 
 # Register sample workloads
 echo "[deploy] Registering sample workloads..."
 
 # Sample workload registrations
 # Format: spiffe_id|parent_id|selectors (comma-separated)
-# Parent ID format: spiffe://<trust-domain>/spire/agent/k8s_psat/<cluster-name>/*
+# Parent ID with * wildcard will be replaced with node alias (O(n) instead of O(n*m))
 # Selectors format: k8s:ns:<namespace> for namespace, k8s:sa:<service-account> for service account
 WORKLOADS=$(cat <<'EOF'
 spiffe://spiffe-helper.local/ns/default/sa/spiffe-helper-test|spiffe://spiffe-helper.local/spire/agent/k8s_psat/spiffe-helper/*|k8s:ns:default,k8s:sa:spiffe-helper-test

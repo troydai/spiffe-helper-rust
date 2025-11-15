@@ -8,6 +8,9 @@ export KUBECONFIG="${KUBECONFIG_PATH}"
 
 echo "[undeploy] Removing SPIRE workload registration controller..."
 
+# Node alias SPIFFE ID
+NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
+
 # Optionally deregister entries if SPIRE server is still running
 if kubectl get namespace spire-server > /dev/null 2>&1; then
 	SPIRE_SERVER_POD=$(kubectl get pods -n spire-server -l app=spire-server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
@@ -53,6 +56,10 @@ EOF
 				fi
 			fi
 		done <<< "${WORKLOADS}"
+		
+		# Optionally delete node alias (only if no workloads are using it)
+		echo "[undeploy] Checking if node alias should be removed..."
+		# Note: We'll leave the node alias in place as it may be used by other entries
 	fi
 fi
 
