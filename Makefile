@@ -43,9 +43,13 @@ cluster-up: $(KIND_CONFIG)
 	fi
 	@$(KIND) get kubeconfig --name "$(KIND_CLUSTER_NAME)" > "$(KUBECONFIG_PATH)"
 	@echo "Kubeconfig written to $(KUBECONFIG_PATH)"
+	@echo "Deploying httpbin service..."
+	@KUBECONFIG="$(KUBECONFIG_PATH)" $(KUBECTL) apply -f "$(ROOT_DIR)/deploy/httpbin/httpbin.yaml" || true
+	@echo "Waiting for httpbin pod to be ready..."
+	@KUBECONFIG="$(KUBECONFIG_PATH)" $(KUBECTL) wait --for=condition=ready pod -l app=httpbin -n httpbin --timeout=60s 2>/dev/null || echo "httpbin deployment may still be in progress"
 
 .PHONY: cluster-down
-cluster-down: undeploy-registration undeploy-spire-agent undeploy-spire-server
+cluster-down:
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "Deleting kind cluster '$(KIND_CLUSTER_NAME)'"; \
 		$(KIND) delete cluster --name "$(KIND_CLUSTER_NAME)"; \
