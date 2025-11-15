@@ -1,5 +1,5 @@
-use clap::Parser;
 use anyhow::Result;
+use clap::Parser;
 
 /// A CLI application
 #[derive(Parser, Debug)]
@@ -19,11 +19,10 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let name = args.name.as_deref().unwrap_or("World");
-    
+
     for _ in 0..args.count {
         println!("Hello, {}!", name);
     }
 
     Ok(())
 }
-
