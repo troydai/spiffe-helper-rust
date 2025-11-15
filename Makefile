@@ -107,7 +107,3 @@ deploy-spire-agent: certs
 .PHONY: undeploy-spire-agent
 undeploy-spire-agent:
 	@$(UNDEPLOY_SPIRE_AGENT_SCRIPT)
-
-.PHONY: env-down
-env-down: cluster-down
-	@echo "[env-down] Environment cleanup complete."
