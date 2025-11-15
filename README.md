@@ -74,7 +74,7 @@ Use the provided `kind-config.yaml` plus Make targets to spin up a disposable de
 
 1. Run `make cluster-up`. The command creates (or reuses) a kind cluster named `spiffe-helper` and writes a kubeconfig to `./artifacts/kubeconfig`.
 2. Point `kubectl` at the new cluster with `export KUBECONFIG=$(pwd)/artifacts/kubeconfig` and interact as usual.
-3. Tear the cluster down with `make cluster-down`. This removes the kind cluster and cleans up the kubeconfig under `./artifacts/`.
+3. Tear the cluster down with `make cluster-down`. This automatically cleans up SPIRE agents and server resources, then removes the kind cluster and cleans up the kubeconfig under `./artifacts/`.
 
 Both targets are idempotent: re-running `make cluster-up` when the cluster already exists refreshes the kubeconfig; `make cluster-down` is a no-op if the cluster is already gone. The `artifacts/` directory is gitignored so kubeconfigs remain local-only.
 
@@ -148,3 +148,87 @@ The SPIRE server:
 - Uses SPIRE server image version 1.13.0
 - Trust domain: `spiffe-helper.local`
 - Stores data in SQLite (ephemeral, cleared on pod restart)
+
+## SPIRE Agent Deployment
+
+This repository includes Kubernetes manifests and Makefile targets to deploy SPIRE agents as a DaemonSet in the kind cluster. The agents run on every node and provide the Workload API for workloads to fetch SPIFFE identities.
+
+### Deploy SPIRE Agent (`make deploy-spire-agent`)
+
+Deploys SPIRE agents as a DaemonSet with all required resources:
+
+```bash
+make deploy-spire-agent
+```
+
+This target:
+- Ensures certificates are generated (`make certs`)
+- Creates the `spire-agent` namespace
+- Creates a Kubernetes Secret from the bootstrap bundle in `./artifacts/certs/`
+- Deploys the SPIRE agent DaemonSet with:
+  - Kubernetes node attestation (k8s_psat plugin)
+  - Workload API socket at `/run/spire/sockets/workload_api.sock`
+  - Proper RBAC (ClusterRole and ClusterRoleBinding) for node attestation
+  - Host network mode for socket access
+- Waits for all agent pods to be ready before returning
+
+The deployment is **idempotent**: safe to run multiple times.
+
+### Undeploy SPIRE Agent (`make undeploy-spire-agent`)
+
+Remove all SPIRE agent resources:
+
+```bash
+make undeploy-spire-agent
+```
+
+This cleanly removes the namespace and all associated resources (DaemonSet, ConfigMap, ClusterRole, ClusterRoleBinding, ServiceAccount, and Secrets).
+
+### Testing
+
+After deployment, verify the agents are running:
+
+```bash
+# Check DaemonSet status
+export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+kubectl get daemonset -n spire-agent
+
+# View agent pods
+kubectl get pods -n spire-agent
+
+# View logs from a specific agent pod
+kubectl logs -n spire-agent -l app=spire-agent -f
+
+# Check agent readiness
+kubectl get pods -n spire-agent -o wide
+```
+
+The SPIRE agents:
+- Run as a DaemonSet (one pod per node)
+- Use SPIRE agent image version 1.13.0 (matches server version)
+- Trust domain: `spiffe-helper.local` (matches server)
+- Provide Workload API at `/run/spire/sockets/workload_api.sock`
+- Use Kubernetes node attestation to authenticate with the SPIRE server
+- Automatically attest and become ready after successful node attestation
+
+### Complete Deployment Workflow
+
+To deploy both SPIRE server and agents:
+
+```bash
+# 1. Generate certificates
+make certs
+
+# 2. Create cluster and deploy server
+make deploy-spire-server
+
+# 3. Deploy agents
+make deploy-spire-agent
+```
+
+To clean up everything:
+
+```bash
+# This automatically cleans up agents, server, and the cluster
+make cluster-down
+```
