@@ -15,8 +15,11 @@ tools:
 .PHONY: cluster-up
 cluster-up: $(KIND_CONFIG_TEMPLATE)
 	@mkdir -p "$(ARTIFACTS_DIR)"
-	@mkdir -p "$(CERTS_DIR)"
-	@sed "s|\$${CERTS_DIR}|$(CERTS_DIR)|g" "$(KIND_CONFIG_TEMPLATE)" > "$(KIND_RENDERED_CONFIG)"
+	@if [ -d "$(CERTS_DIR)" ] && [ -n "$$(ls -A "$(CERTS_DIR)" 2>/dev/null)" ]; then \
+		sed "s|\$${CERTS_DIR}|$(CERTS_DIR)|g" "$(KIND_CONFIG_TEMPLATE)" > "$(KIND_RENDERED_CONFIG)"; \
+	else \
+		sed -e "s|\$${CERTS_DIR}|$(CERTS_DIR)|g" -e '/^[[:space:]]*extraMounts:/,/^[[:space:]]*readOnly: true/d' "$(KIND_CONFIG_TEMPLATE)" > "$(KIND_RENDERED_CONFIG)"; \
+	fi
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "kind cluster '$(KIND_CLUSTER_NAME)' already exists"; \
 	else \

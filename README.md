@@ -36,7 +36,7 @@ Feel free to substitute other installation methods (ASDF, Nix, direct downloads,
 
 Use the provided `kind-config.yaml` plus Make targets to spin up a disposable development cluster without touching your global kubeconfig:
 
-1. Create or populate a directory with any certificates you need the cluster to mount (defaults to `./certs`, override with `CERTS_DIR=/absolute/path make cluster-up`).
+1. (Optional) If you need to mount certificates into the cluster, create and populate a directory with your certificates (defaults to `./certs`, override with `CERTS_DIR=/absolute/path make cluster-up`). The certs mount is only included if the directory exists and contains files.
 2. Run `make cluster-up`. The command renders `kind-config.yaml`, creates (or reuses) a kind cluster named `spiffe-helper`, and writes a kubeconfig to `./artifacts/kubeconfig`.
 3. Point `kubectl` at the new cluster with `export KUBECONFIG=$(pwd)/artifacts/kubeconfig` and interact as usual.
 4. Tear the cluster down with `make cluster-down`. This removes the kind cluster and cleans up the kubeconfig/config rendering under `./artifacts/`.
