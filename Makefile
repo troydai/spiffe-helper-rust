@@ -43,7 +43,7 @@ cluster-up: $(KIND_CONFIG)
 	@echo "Kubeconfig written to $(KUBECONFIG_PATH)"
 
 .PHONY: cluster-down
-cluster-down:
+cluster-down: undeploy-spire-agent undeploy-spire-server
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "Deleting kind cluster '$(KIND_CLUSTER_NAME)'"; \
 		$(KIND) delete cluster --name "$(KIND_CLUSTER_NAME)"; \
@@ -93,7 +93,7 @@ deploy-spire-server: cluster-up certs
 	@$(DEPLOY_SPIRE_SCRIPT)
 
 .PHONY: undeploy-spire-server
-undeploy-spire-server: check-cluster
+undeploy-spire-server:
 	@$(UNDEPLOY_SPIRE_SCRIPT)
 
 .PHONY: check-spire-server
@@ -109,5 +109,5 @@ undeploy-spire-agent:
 	@$(UNDEPLOY_SPIRE_AGENT_SCRIPT)
 
 .PHONY: env-down
-env-down: undeploy-spire-agent undeploy-spire-server cluster-down
+env-down: cluster-down
 	@echo "[env-down] Environment cleanup complete."
