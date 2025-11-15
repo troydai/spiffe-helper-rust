@@ -6,6 +6,8 @@ UNDEPLOY_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-server.sh
 CHECK_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/check-spire-server.sh
 DEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-agent.sh
 UNDEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-agent.sh
+DEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/deploy-registration.sh
+UNDEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/undeploy-registration.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
 KIND_CONFIG := $(ROOT_DIR)/kind-config.yaml
@@ -43,7 +45,7 @@ cluster-up: $(KIND_CONFIG)
 	@echo "Kubeconfig written to $(KUBECONFIG_PATH)"
 
 .PHONY: cluster-down
-cluster-down: undeploy-spire-agent undeploy-spire-server
+cluster-down: undeploy-registration undeploy-spire-agent undeploy-spire-server
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "Deleting kind cluster '$(KIND_CLUSTER_NAME)'"; \
 		$(KIND) delete cluster --name "$(KIND_CLUSTER_NAME)"; \
@@ -107,3 +109,11 @@ deploy-spire-agent: certs
 .PHONY: undeploy-spire-agent
 undeploy-spire-agent:
 	@$(UNDEPLOY_SPIRE_AGENT_SCRIPT)
+
+.PHONY: deploy-registration
+deploy-registration: check-cluster
+	@$(DEPLOY_REGISTRATION_SCRIPT)
+
+.PHONY: undeploy-registration
+undeploy-registration:
+	@$(UNDEPLOY_REGISTRATION_SCRIPT)
