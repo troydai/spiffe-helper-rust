@@ -17,5 +17,5 @@ Thumbs.db
 # Tooling outputs
 /bin/
 
-# Generated certificates
-/artifacts/certs/
+# Local artifacts
+/artifacts/
