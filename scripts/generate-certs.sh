@@ -48,7 +48,7 @@ generate_ca() {
 
   info "Generating CA certificate..."
   openssl req -new -x509 -days 3650 -key "${CA_KEY}" -out "${CA_CERT}" \
-    -subj "/CN=SPIRE CA" \
+    -subj "/CN=spiffe-helper-sandbox-ca" \
     -addext "basicConstraints=critical,CA:TRUE" \
     -addext "keyUsage=critical,keyCertSign,cRLSign"
 
@@ -67,7 +67,7 @@ generate_spire_server() {
 
   info "Generating SPIRE server certificate signing request..."
   openssl req -new -key "${SERVER_KEY}" -out "${SERVER_CSR}" \
-    -subj "/CN=spire-server"
+    -subj "/CN=spiffe-helper-sandbox-spire-server"
 
   info "Generating SPIRE server certificate (signed by CA)..."
   openssl x509 -req -in "${SERVER_CSR}" -CA "${CA_CERT}" -CAkey "${CA_KEY}" \
@@ -79,9 +79,6 @@ generate_spire_server() {
       echo "extendedKeyUsage=serverAuth"
       echo "subjectAltName=DNS:spire-server,DNS:spire-server.default.svc.cluster.local"
     )
-
-  # Clean up CSR file
-  rm -f "${SERVER_CSR}"
 
   info "SPIRE server certificate and key generated successfully"
 }
@@ -130,7 +127,7 @@ main() {
   info ""
   info "Generated files:"
   info "  - CA: ${CA_KEY}, ${CA_CERT}"
-  info "  - SPIRE Server: ${SERVER_KEY}, ${SERVER_CERT}"
+  info "  - SPIRE Server: ${SERVER_KEY}, ${SERVER_CERT}, ${SERVER_CSR}"
   info "  - JWT Signing: ${JWT_KEY}"
   info "  - Bootstrap Bundle: ${BOOTSTRAP_BUNDLE}"
 }
