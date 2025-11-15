@@ -15,9 +15,7 @@ spec:
         app: spire-agent
     spec:
       serviceAccountName: spire-agent
-      hostNetwork: true
       hostPID: true
-      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: spire-agent
         image: ghcr.io/spiffe/spire-agent:1.13.0
