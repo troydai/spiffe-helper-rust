@@ -43,8 +43,8 @@ generate_ca() {
     return 0
   fi
 
-  info "Generating CA private key..."
-  openssl genrsa -out "${CA_KEY}" 4096
+  info "Generating CA private key (ECDSA P-384)..."
+  openssl ecparam -genkey -name secp384r1 -out "${CA_KEY}"
 
   info "Generating CA certificate..."
   openssl req -new -x509 -days 3650 -key "${CA_KEY}" -out "${CA_CERT}" \
@@ -62,8 +62,8 @@ generate_spire_server() {
     return 0
   fi
 
-  info "Generating SPIRE server private key..."
-  openssl genrsa -out "${SERVER_KEY}" 2048
+  info "Generating SPIRE server private key (ECDSA P-256)..."
+  openssl ecparam -genkey -name secp256r1 -out "${SERVER_KEY}"
 
   info "Generating SPIRE server certificate signing request..."
   openssl req -new -key "${SERVER_KEY}" -out "${SERVER_CSR}" \
@@ -75,7 +75,7 @@ generate_spire_server() {
     -extensions v3_server -extfile <(
       echo "[v3_server]"
       echo "basicConstraints=CA:FALSE"
-      echo "keyUsage=digitalSignature,keyEncipherment"
+      echo "keyUsage=digitalSignature"
       echo "extendedKeyUsage=serverAuth"
       echo "subjectAltName=DNS:spire-server,DNS:spire-server.default.svc.cluster.local"
     )
@@ -93,8 +93,8 @@ generate_jwt_key() {
     return 0
   fi
 
-  info "Generating JWT signing key..."
-  openssl genrsa -out "${JWT_KEY}" 2048
+  info "Generating JWT signing key (ECDSA P-256)..."
+  openssl ecparam -genkey -name secp256r1 -out "${JWT_KEY}"
 
   info "JWT signing key generated successfully"
 }
