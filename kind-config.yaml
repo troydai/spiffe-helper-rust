@@ -13,4 +13,5 @@ nodes:
         containerPath: /var/run/spiffe-helper/certs
         readOnly: true
   - role: worker
+  - role: worker
 
