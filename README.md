@@ -31,3 +31,13 @@ Use whichever package manager you prefer. The examples below are common starting
 | openssl | `brew install openssl`             | `sudo apt-get install -y openssl`              | https://www.openssl.org/source/ |
 
 Feel free to substitute other installation methods (ASDF, Nix, direct downloads, etc.) as long as the resulting binaries land on your `PATH`. After installation, run `make tools` again to verify the environment.
+
+## Local kind cluster
+
+Use the provided `kind-config.yaml` plus Make targets to spin up a disposable development cluster without touching your global kubeconfig:
+
+1. Run `make cluster-up`. The command creates (or reuses) a kind cluster named `spiffe-helper` and writes a kubeconfig to `./artifacts/kubeconfig`.
+2. Point `kubectl` at the new cluster with `export KUBECONFIG=$(pwd)/artifacts/kubeconfig` and interact as usual.
+3. Tear the cluster down with `make cluster-down`. This removes the kind cluster and cleans up the kubeconfig under `./artifacts/`.
+
+Both targets are idempotent: re-running `make cluster-up` when the cluster already exists refreshes the kubeconfig; `make cluster-down` is a no-op if the cluster is already gone. The `artifacts/` directory is gitignored so kubeconfigs remain local-only.
