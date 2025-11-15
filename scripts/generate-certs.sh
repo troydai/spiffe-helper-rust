@@ -42,8 +42,8 @@ generate_ca() {
     return 0
   fi
 
-  info "Generating CA private key (ECDSA P-384)..."
-  openssl ecparam -genkey -name secp384r1 -out "${CA_KEY}"
+  info "Generating CA private key (ECDSA P-384) in PKCS#8 format..."
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp384r1 -out "${CA_KEY}"
 
   info "Generating CA certificate..."
   openssl req -new -x509 -days 3650 -key "${CA_KEY}" -out "${CA_CERT}" \
@@ -61,8 +61,8 @@ generate_spire_server() {
     return 0
   fi
 
-  info "Generating SPIRE server private key (ECDSA P-256)..."
-  openssl ecparam -genkey -name secp256r1 -out "${SERVER_KEY}"
+  info "Generating SPIRE server private key (ECDSA P-256) in PKCS#8 format..."
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "${SERVER_KEY}"
 
   info "Generating SPIRE server certificate signing request..."
   openssl req -new -key "${SERVER_KEY}" -out "${SERVER_CSR}" \

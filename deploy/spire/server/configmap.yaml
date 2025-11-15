@@ -15,11 +15,6 @@ data:
         data_dir = "/run/spire/data"
         log_level = "INFO"
         log_format = "text"
-        
-        ca_subject {
-            country = ["US"]
-            organization = ["SPIRE"]
-        }
     }
 
     plugins {
@@ -34,7 +29,7 @@ data:
             plugin_data {
                 clusters = {
                     "spiffe-helper" = {
-                        service_account_allow_list = ["spire-server:spire-server"]
+                        service_account_allow_list = ["spire-server:spire-server", "spire-agent:spire-agent"]
                     }
                 }
             }
@@ -43,6 +38,13 @@ data:
         KeyManager "disk" {
             plugin_data {
                 keys_path = "/run/spire/data/keys.json"
+            }
+        }
+
+        UpstreamAuthority "disk" {
+            plugin_data {
+                key_file_path = "/run/spire/secrets/ca/ca.key"
+                cert_file_path = "/run/spire/secrets/ca/ca.crt"
             }
         }
     }
