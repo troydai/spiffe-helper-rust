@@ -4,6 +4,8 @@ CERT_SCRIPT := $(ROOT_DIR)/scripts/generate-certs.sh
 DEPLOY_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-server.sh
 UNDEPLOY_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-server.sh
 CHECK_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/check-spire-server.sh
+DEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-agent.sh
+UNDEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-agent.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
 KIND_CONFIG := $(ROOT_DIR)/kind-config.yaml
@@ -100,69 +102,11 @@ check-spire-server: check-cluster
 
 .PHONY: deploy-spire-agent
 deploy-spire-agent: certs
-	@echo "[deploy-spire-agent] Deploying SPIRE agent..."
-	@if [ ! -f "$(KUBECONFIG_PATH)" ]; then \
-		echo "Error: Kubeconfig not found. Run 'make cluster-up' first."; \
-		exit 1; \
-	fi
-	@if [ ! -f "$(BOOTSTRAP_BUNDLE)" ]; then \
-		echo "Error: Bootstrap bundle not found at $(BOOTSTRAP_BUNDLE). Run 'make certs' first."; \
-		exit 1; \
-	fi
-	@echo "[deploy-spire-agent] Creating namespace..."
-	@$(KUBECTL) apply -f $(SPIRE_AGENT_DIR)/namespace.yaml
-	@echo "[deploy-spire-agent] Creating bootstrap bundle Secret from $(BOOTSTRAP_BUNDLE)..."
-	@$(KUBECTL) create secret generic spire-bundle -n spire-agent \
-		--from-file=bundle.pem=$(BOOTSTRAP_BUNDLE) \
-		--dry-run=client -o yaml | \
-		$(KUBECTL) apply -f -
-	@echo "[deploy-spire-agent] Applying SPIRE agent manifests..."
-	@$(KUBECTL) apply -f $(SPIRE_AGENT_DIR)/serviceaccount.yaml
-	@$(KUBECTL) apply -f $(SPIRE_AGENT_DIR)/clusterrole.yaml
-	@$(KUBECTL) apply -f $(SPIRE_AGENT_DIR)/clusterrolebinding.yaml
-	@$(KUBECTL) apply -f $(SPIRE_AGENT_DIR)/configmap.yaml
-	@$(KUBECTL) apply -f $(SPIRE_AGENT_DIR)/daemonset.yaml
-	@echo "[deploy-spire-agent] Waiting for SPIRE agent DaemonSet to be ready..."
-	@timeout=300; \
-	elapsed=0; \
-	interval=5; \
-	while [ $$elapsed -lt $$timeout ]; do \
-		ready=$$($(KUBECTL) get daemonset spire-agent -n spire-agent -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0"); \
-		desired=$$($(KUBECTL) get daemonset spire-agent -n spire-agent -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0"); \
-		if [ "$$ready" = "$$desired" ] && [ "$$ready" != "0" ]; then \
-			echo "[deploy-spire-agent] All $$ready/$$desired SPIRE agent pods are ready!"; \
-			break; \
-		fi; \
-		echo "[deploy-spire-agent] Waiting... ($$ready/$$desired pods ready)"; \
-		sleep $$interval; \
-		elapsed=$$((elapsed + interval)); \
-	done; \
-	if [ $$elapsed -ge $$timeout ]; then \
-		echo "[deploy-spire-agent] Warning: Timeout waiting for DaemonSet to be ready. Checking status..."; \
-		$(KUBECTL) get daemonset spire-agent -n spire-agent; \
-		$(KUBECTL) get pods -l app=spire-agent -n spire-agent; \
-		exit 1; \
-	fi
-	@echo "[deploy-spire-agent] SPIRE agent DaemonSet status:"
-	@$(KUBECTL) get daemonset spire-agent -n spire-agent
-	@echo "[deploy-spire-agent] SPIRE agent pods:"
-	@$(KUBECTL) get pods -l app=spire-agent -n spire-agent
+	@$(DEPLOY_SPIRE_AGENT_SCRIPT)
 
 .PHONY: undeploy-spire-agent
 undeploy-spire-agent:
-	@echo "[undeploy-spire-agent] Removing SPIRE agent..."
-	@if [ ! -f "$(KUBECONFIG_PATH)" ]; then \
-		echo "Kubeconfig not found. Skipping undeploy."; \
-		exit 0; \
-	fi
-	@$(KUBECTL) delete daemonset spire-agent -n spire-agent --ignore-not-found=true
-	@$(KUBECTL) delete configmap spire-agent-config -n spire-agent --ignore-not-found=true
-	@$(KUBECTL) delete clusterrolebinding spire-agent-cluster-role-binding --ignore-not-found=true
-	@$(KUBECTL) delete clusterrole spire-agent-cluster-role --ignore-not-found=true
-	@$(KUBECTL) delete serviceaccount spire-agent -n spire-agent --ignore-not-found=true
-	@$(KUBECTL) delete secret spire-bundle -n spire-agent --ignore-not-found=true
-	@$(KUBECTL) delete namespace spire-agent --ignore-not-found=true
-	@echo "[undeploy-spire-agent] SPIRE agent removed."
+	@$(UNDEPLOY_SPIRE_AGENT_SCRIPT)
 
 .PHONY: env-down
 env-down: undeploy-spire-agent undeploy-spire-server cluster-down
