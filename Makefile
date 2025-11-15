@@ -4,12 +4,16 @@ CERT_SCRIPT := $(ROOT_DIR)/scripts/generate-certs.sh
 DEPLOY_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-server.sh
 UNDEPLOY_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-server.sh
 CHECK_SPIRE_SCRIPT := $(ROOT_DIR)/scripts/check-spire-server.sh
+DEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-agent.sh
+UNDEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-agent.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
 KIND_CONFIG := $(ROOT_DIR)/kind-config.yaml
 ARTIFACTS_DIR := $(ROOT_DIR)/artifacts
 KUBECONFIG_PATH := $(ARTIFACTS_DIR)/kubeconfig
 CERT_DIR := $(ARTIFACTS_DIR)/certs
+BOOTSTRAP_BUNDLE := $(CERT_DIR)/bootstrap-bundle.pem
+SPIRE_AGENT_DIR := $(ROOT_DIR)/deploy/spire/agent
 KUBECTL := KUBECONFIG="$(KUBECONFIG_PATH)" kubectl
 
 .PHONY: tools
@@ -39,7 +43,7 @@ cluster-up: $(KIND_CONFIG)
 	@echo "Kubeconfig written to $(KUBECONFIG_PATH)"
 
 .PHONY: cluster-down
-cluster-down:
+cluster-down: undeploy-spire-agent undeploy-spire-server
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "Deleting kind cluster '$(KIND_CLUSTER_NAME)'"; \
 		$(KIND) delete cluster --name "$(KIND_CLUSTER_NAME)"; \
@@ -89,9 +93,17 @@ deploy-spire-server: cluster-up certs
 	@$(DEPLOY_SPIRE_SCRIPT)
 
 .PHONY: undeploy-spire-server
-undeploy-spire-server: check-cluster
+undeploy-spire-server:
 	@$(UNDEPLOY_SPIRE_SCRIPT)
 
 .PHONY: check-spire-server
 check-spire-server: check-cluster
 	@$(CHECK_SPIRE_SCRIPT)
+
+.PHONY: deploy-spire-agent
+deploy-spire-agent: certs
+	@$(DEPLOY_SPIRE_AGENT_SCRIPT)
+
+.PHONY: undeploy-spire-agent
+undeploy-spire-agent:
+	@$(UNDEPLOY_SPIRE_AGENT_SCRIPT)

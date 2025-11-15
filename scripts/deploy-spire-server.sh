@@ -21,6 +21,9 @@ kubectl apply -f "${DEPLOY_DIR}/namespace.yaml"
 
 echo "[deploy] Creating ServiceAccount..."
 kubectl apply -f "${DEPLOY_DIR}/serviceaccount.yaml"
+echo "[deploy] Creating ClusterRole and ClusterRoleBinding..."
+kubectl apply -f "${DEPLOY_DIR}/clusterrole.yaml"
+kubectl apply -f "${DEPLOY_DIR}/clusterrolebinding.yaml"
 
 echo "[deploy] Creating Secrets from certificates..."
 kubectl create secret generic spire-server-tls \
