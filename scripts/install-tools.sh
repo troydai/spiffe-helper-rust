@@ -9,13 +9,29 @@ error() {
   echo "[tools] $*" >&2
 }
 
-declare -A TOOL_DOCS=(
-  [kind]="https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
-  [kubectl]="https://kubernetes.io/docs/tasks/tools/"
-  [helm]="https://helm.sh/docs/intro/install/"
-  [jq]="https://jqlang.github.io/jq/download/"
-  [openssl]="https://www.openssl.org/source/"
-)
+get_tool_docs() {
+  local name="$1"
+  case "${name}" in
+    kind)
+      echo "https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+      ;;
+    kubectl)
+      echo "https://kubernetes.io/docs/tasks/tools/"
+      ;;
+    helm)
+      echo "https://helm.sh/docs/intro/install/"
+      ;;
+    jq)
+      echo "https://jqlang.github.io/jq/download/"
+      ;;
+    openssl)
+      echo "https://www.openssl.org/source/"
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
 
 print_version() {
   local name="$1"
@@ -60,7 +76,9 @@ check_tool() {
     return 0
   fi
 
-  error "missing ${name}. Install instructions: ${TOOL_DOCS[$name]}"
+  local docs_url
+  docs_url="$(get_tool_docs "${name}")"
+  error "missing ${name}. Install instructions: ${docs_url}"
   return 1
 }
 
