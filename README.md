@@ -77,3 +77,74 @@ Use the provided `kind-config.yaml` plus Make targets to spin up a disposable de
 3. Tear the cluster down with `make cluster-down`. This removes the kind cluster and cleans up the kubeconfig under `./artifacts/`.
 
 Both targets are idempotent: re-running `make cluster-up` when the cluster already exists refreshes the kubeconfig; `make cluster-down` is a no-op if the cluster is already gone. The `artifacts/` directory is gitignored so kubeconfigs remain local-only.
+
+## SPIRE Server Deployment
+
+This repository includes Kubernetes manifests and Makefile targets to deploy a SPIRE server in the kind cluster for testing and development.
+
+### Deploy SPIRE Server (`make deploy-spire-server`)
+
+Deploys the SPIRE server with all required resources:
+
+```bash
+make deploy-spire-server
+```
+
+This target:
+- Ensures the cluster is running (`make cluster-up`)
+- Ensures certificates are generated (`make certs`)
+- Creates the `spire-server` namespace
+- Creates Kubernetes Secrets from certificates in `./artifacts/certs/`
+- Deploys the SPIRE server StatefulSet with:
+  - SQLite datastore
+  - Kubernetes node attestation (k8s_psat plugin)
+  - Health probes (TCP socket checks on port 8081)
+- Waits for the pod to be ready before returning
+
+The deployment is **idempotent**: safe to run multiple times.
+
+### Check SPIRE Server Status (`make check-spire-server`)
+
+Verify the SPIRE server is running and healthy:
+
+```bash
+make check-spire-server
+```
+
+This displays:
+- Pod status
+- Service status
+- Recent logs (last 20 lines)
+- Health check status
+
+### Undeploy SPIRE Server (`make undeploy-spire-server`)
+
+Remove all SPIRE server resources:
+
+```bash
+make undeploy-spire-server
+```
+
+This cleanly removes the namespace and all associated resources.
+
+### Testing
+
+After deployment, verify the server is running:
+
+```bash
+# Check pod status
+export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+kubectl get pods -n spire-server
+
+# View logs
+kubectl logs -n spire-server -l app=spire-server -f
+
+# Check service
+kubectl get svc -n spire-server
+```
+
+The SPIRE server:
+- Runs on port 8081 (API endpoint)
+- Uses SPIRE server image version 1.13.0
+- Trust domain: `spiffe-helper.local`
+- Stores data in SQLite (ephemeral, cleared on pod restart)
