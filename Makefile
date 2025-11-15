@@ -1,6 +1,5 @@
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TOOLS_SCRIPT := $(ROOT_DIR)/scripts/install-tools.sh
-PYTHON ?= python3
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
 KIND_CONFIG_TEMPLATE := $(ROOT_DIR)/kind-config.yaml
@@ -17,17 +16,7 @@ tools:
 cluster-up: $(KIND_CONFIG_TEMPLATE)
 	@mkdir -p "$(ARTIFACTS_DIR)"
 	@mkdir -p "$(CERTS_DIR)"
-	@CERTS_DIR="$(CERTS_DIR)" KIND_TEMPLATE="$(KIND_CONFIG_TEMPLATE)" KIND_RENDERED="$(KIND_RENDERED_CONFIG)" $(PYTHON) - <<'PY'
-import os
-from pathlib import Path
-template = Path(os.environ["KIND_TEMPLATE"]).read_text()
-certs_dir = os.environ["CERTS_DIR"]
-if "${CERTS_DIR}" not in template:
-    raise SystemExit("kind-config.yaml must reference ${CERTS_DIR}")
-rendered = template.replace("${CERTS_DIR}", certs_dir)
-rendered_path = Path(os.environ["KIND_RENDERED"])
-rendered_path.write_text(rendered)
-PY
+	@sed "s|\$${CERTS_DIR}|$(CERTS_DIR)|g" "$(KIND_CONFIG_TEMPLATE)" > "$(KIND_RENDERED_CONFIG)"
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "kind cluster '$(KIND_CLUSTER_NAME)' already exists"; \
 	else \
