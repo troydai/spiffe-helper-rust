@@ -1,14 +1,26 @@
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TOOLS_SCRIPT := $(ROOT_DIR)/scripts/install-tools.sh
+CERT_SCRIPT := $(ROOT_DIR)/scripts/generate-certs.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
 KIND_CONFIG := $(ROOT_DIR)/kind-config.yaml
 ARTIFACTS_DIR := $(ROOT_DIR)/artifacts
 KUBECONFIG_PATH := $(ARTIFACTS_DIR)/kubeconfig
+CERT_DIR := $(ARTIFACTS_DIR)/certs
 
 .PHONY: tools
 tools:
 	@$(TOOLS_SCRIPT)
+
+.PHONY: certs
+certs:
+	@$(CERT_SCRIPT)
+
+.PHONY: clean
+clean:
+	@echo "[clean] Removing generated certificates..."
+	@rm -rf $(CERT_DIR)
+	@echo "[clean] Clean complete."
 
 .PHONY: cluster-up
 cluster-up: $(KIND_CONFIG)
