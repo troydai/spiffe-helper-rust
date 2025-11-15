@@ -19,7 +19,6 @@ CA_CERT="${CERT_DIR}/ca-cert.pem"
 SERVER_KEY="${CERT_DIR}/spire-server-key.pem"
 SERVER_CERT="${CERT_DIR}/spire-server-cert.pem"
 SERVER_CSR="${CERT_DIR}/spire-server.csr"
-JWT_KEY="${CERT_DIR}/jwt-signing-key.pem"
 BOOTSTRAP_BUNDLE="${CERT_DIR}/bootstrap-bundle.pem"
 
 # Create certs directory if it doesn't exist
@@ -83,19 +82,6 @@ generate_spire_server() {
   info "SPIRE server certificate and key generated successfully"
 }
 
-# Function to generate JWT signing key
-generate_jwt_key() {
-  if [[ "${FORCE}" -eq 0 ]] && file_exists "${JWT_KEY}"; then
-    info "JWT signing key already exists, skipping generation"
-    return 0
-  fi
-
-  info "Generating JWT signing key (ECDSA P-256)..."
-  openssl ecparam -genkey -name secp256r1 -out "${JWT_KEY}"
-
-  info "JWT signing key generated successfully"
-}
-
 # Function to generate bootstrap bundle
 generate_bootstrap_bundle() {
   if [[ "${FORCE}" -eq 0 ]] && file_exists "${BOOTSTRAP_BUNDLE}"; then
@@ -120,7 +106,6 @@ main() {
 
   generate_ca
   generate_spire_server
-  generate_jwt_key
   generate_bootstrap_bundle
 
   info "Certificate generation complete!"
@@ -128,7 +113,6 @@ main() {
   info "Generated files:"
   info "  - CA: ${CA_KEY}, ${CA_CERT}"
   info "  - SPIRE Server: ${SERVER_KEY}, ${SERVER_CERT}, ${SERVER_CSR}"
-  info "  - JWT Signing: ${JWT_KEY}"
   info "  - Bootstrap Bundle: ${BOOTSTRAP_BUNDLE}"
 }
 

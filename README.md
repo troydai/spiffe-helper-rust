@@ -51,7 +51,7 @@ This command creates the following files in `./artifacts/certs/`:
 
 - **CA Certificate and Key**: `ca-cert.pem`, `ca-key.pem` (ECDSA P-384)
 - **SPIRE Server Certificate and Key**: `spire-server-cert.pem`, `spire-server-key.pem` (ECDSA P-256)
-- **JWT Signing Key**: `jwt-signing-key.pem` (ECDSA P-256)
+- **SPIRE Server Certificate Signing Request**: `spire-server.csr` (for reference)
 - **Bootstrap Bundle**: `bootstrap-bundle.pem` (contains the CA certificate)
 
 All certificates use **ECDSA** (Elliptic Curve Digital Signature Algorithm) for modern cryptographic security with smaller key sizes and better performance compared to RSA.
