@@ -58,13 +58,6 @@ if kubectl get namespace spire-registration > /dev/null 2>&1; then
 	echo "[undeploy] Deleting ConfigMap..."
 	kubectl delete configmap spire-registration-config -n spire-registration --ignore-not-found=true
 	
-	echo "[undeploy] Deleting ServiceAccount..."
-	kubectl delete serviceaccount spire-registration -n spire-registration --ignore-not-found=true
-	
-	echo "[undeploy] Deleting ClusterRoleBinding and ClusterRole..."
-	kubectl delete clusterrolebinding spire-registration-cluster-role-binding --ignore-not-found=true
-	kubectl delete clusterrole spire-registration-cluster-role --ignore-not-found=true
-	
 	echo "[undeploy] Deleting namespace..."
 	kubectl delete namespace spire-registration --ignore-not-found=true
 	
