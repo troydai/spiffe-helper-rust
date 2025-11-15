@@ -22,7 +22,7 @@ spec:
       serviceAccountName: spire-server
       containers:
       - name: spire-server
-        image: ghcr.io/spiffe/spire-server:1.9.1
+        image: ghcr.io/spiffe/spire-server:1.13.0
         imagePullPolicy: IfNotPresent
         args:
         - -config
