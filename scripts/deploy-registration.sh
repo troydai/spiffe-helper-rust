@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
-DEPLOY_DIR="${DEPLOY_DIR:-${ROOT_DIR}/deploy/spire/registration}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
 
@@ -20,12 +19,6 @@ fi
 if ! kubectl get pods -n spire-agent -l app=spire-agent --field-selector=status.phase=Running 2>/dev/null | grep -q Running; then
 	echo "[deploy] Warning: SPIRE agent is not running. Workloads may not be able to attest."
 fi
-
-echo "[deploy] Creating namespace..."
-kubectl apply -f "${DEPLOY_DIR}/namespace.yaml"
-
-echo "[deploy] Creating ConfigMap..."
-kubectl apply -f "${DEPLOY_DIR}/configmap.yaml"
 
 # Wait for SPIRE server to be ready
 echo "[deploy] Waiting for SPIRE server to be ready..."
@@ -133,14 +126,21 @@ register_entry() {
 	fi
 }
 
-# Register sample workloads from ConfigMap
+# Register sample workloads
 echo "[deploy] Registering sample workloads..."
-TRUST_DOMAIN=$(kubectl get configmap spire-registration-config -n spire-registration -o jsonpath='{.data.trust_domain}')
-WORKLOADS=$(kubectl get configmap spire-registration-config -n spire-registration -o jsonpath='{.data.workloads}')
 
-echo "[deploy] Trust domain: ${TRUST_DOMAIN}"
+# Sample workload registrations
+# Format: spiffe_id|parent_id|selectors (comma-separated)
+# Parent ID format: spiffe://<trust-domain>/spire/agent/k8s_psat/<cluster-name>/*
+# Selectors format: k8s:ns:<namespace> for namespace, k8s:sa:<service-account> for service account
+WORKLOADS=$(cat <<'EOF'
+spiffe://spiffe-helper.local/ns/default/sa/spiffe-helper-test|spiffe://spiffe-helper.local/spire/agent/k8s_psat/spiffe-helper/*|k8s:ns:default,k8s:sa:spiffe-helper-test
+spiffe://spiffe-helper.local/ns/spiffe-helper/sa/test-workload|spiffe://spiffe-helper.local/spire/agent/k8s_psat/spiffe-helper/*|k8s:ns:spiffe-helper,k8s:sa:test-workload
+spiffe://spiffe-helper.local/ns/httpbin/sa/httpbin|spiffe://spiffe-helper.local/spire/agent/k8s_psat/spiffe-helper/*|k8s:ns:httpbin,k8s:sa:httpbin
+EOF
+)
 
-# Parse workloads from ConfigMap (format: spiffe_id|parent_id|selectors)
+# Parse workloads (format: spiffe_id|parent_id|selectors)
 REGISTRATION_COUNT=0
 while IFS= read -r line; do
 	# Skip empty lines and comments
