@@ -2,29 +2,22 @@ ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TOOLS_SCRIPT := $(ROOT_DIR)/scripts/install-tools.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
-KIND_CONFIG_TEMPLATE := $(ROOT_DIR)/kind-config.yaml
+KIND_CONFIG := $(ROOT_DIR)/kind-config.yaml
 ARTIFACTS_DIR := $(ROOT_DIR)/artifacts
-KIND_RENDERED_CONFIG := $(ARTIFACTS_DIR)/kind-config.rendered.yaml
 KUBECONFIG_PATH := $(ARTIFACTS_DIR)/kubeconfig
-CERTS_DIR ?= $(ROOT_DIR)/certs
 
 .PHONY: tools
 tools:
 	@$(TOOLS_SCRIPT)
 
 .PHONY: cluster-up
-cluster-up: $(KIND_CONFIG_TEMPLATE)
+cluster-up: $(KIND_CONFIG)
 	@mkdir -p "$(ARTIFACTS_DIR)"
-	@if [ -d "$(CERTS_DIR)" ] && [ -n "$$(ls -A "$(CERTS_DIR)" 2>/dev/null)" ]; then \
-		sed "s|\$${CERTS_DIR}|$(CERTS_DIR)|g" "$(KIND_CONFIG_TEMPLATE)" > "$(KIND_RENDERED_CONFIG)"; \
-	else \
-		sed -e "s|\$${CERTS_DIR}|$(CERTS_DIR)|g" -e '/^[[:space:]]*extraMounts:/,/^[[:space:]]*readOnly: true/d' "$(KIND_CONFIG_TEMPLATE)" > "$(KIND_RENDERED_CONFIG)"; \
-	fi
 	@if $(KIND) get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
 		echo "kind cluster '$(KIND_CLUSTER_NAME)' already exists"; \
 	else \
 		echo "Creating kind cluster '$(KIND_CLUSTER_NAME)'"; \
-		KUBECONFIG="$(KUBECONFIG_PATH)" $(KIND) create cluster --name "$(KIND_CLUSTER_NAME)" --config "$(KIND_RENDERED_CONFIG)"; \
+		KUBECONFIG="$(KUBECONFIG_PATH)" $(KIND) create cluster --name "$(KIND_CLUSTER_NAME)" --config "$(KIND_CONFIG)"; \
 	fi
 	@$(KIND) get kubeconfig --name "$(KIND_CLUSTER_NAME)" > "$(KUBECONFIG_PATH)"
 	@echo "Kubeconfig written to $(KUBECONFIG_PATH)"
@@ -37,5 +30,5 @@ cluster-down:
 	else \
 		echo "kind cluster '$(KIND_CLUSTER_NAME)' already absent"; \
 	fi
-	@rm -f "$(KUBECONFIG_PATH)" "$(KIND_RENDERED_CONFIG)"
+	@rm -f "$(KUBECONFIG_PATH)"
 	@if [ -d "$(ARTIFACTS_DIR)" ] && [ -z "$$(ls -A "$(ARTIFACTS_DIR)")" ]; then rmdir "$(ARTIFACTS_DIR)"; fi
