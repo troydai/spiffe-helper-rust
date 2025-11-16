@@ -70,7 +70,7 @@ mod tests {
         let name = Some("Rust".to_string());
         let greeting_name = name.as_deref().unwrap_or("World");
         assert_eq!(greeting_name, "Rust");
-        
+
         let no_name: Option<String> = None;
         let default_name = no_name.as_deref().unwrap_or("World");
         assert_eq!(default_name, "World");
