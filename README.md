@@ -231,3 +231,222 @@ To clean up everything:
 # This automatically cleans up agents, server, and the cluster
 make cluster-down
 ```
+
+## Environment Orchestration
+
+### Complete Environment Setup (`make env-up`)
+
+Sets up the entire development environment in one command:
+
+```bash
+make env-up
+```
+
+This target orchestrates:
+1. Verifies required tools are installed (`make tools`)
+2. Generates certificates (`make certs`)
+3. Creates the kind cluster (`make cluster-up`)
+4. Deploys SPIRE server (`make deploy-spire-server`)
+5. Deploys SPIRE agents (`make deploy-spire-agent`)
+6. Deploys workload registrations (`make deploy-registration`)
+
+### Complete Environment Teardown (`make env-down`)
+
+Tears down the entire environment:
+
+```bash
+make env-down
+```
+
+This target:
+1. Removes workload registrations (`make undeploy-registration`)
+2. Removes SPIRE agents (`make undeploy-spire-agent`)
+3. Removes SPIRE server (`make undeploy-spire-server`)
+4. Deletes the kind cluster (`make cluster-down`)
+5. Cleans generated artifacts (`make clean`)
+
+## Validation and Testing
+
+### Smoke Test (`make smoke-test`)
+
+Validates that the SPIRE environment is healthy and functioning correctly:
+
+```bash
+make smoke-test
+```
+
+This target runs comprehensive health checks:
+- **Cluster Connectivity**: Verifies the Kubernetes cluster is accessible
+- **SPIRE Server Pod Status**: Checks that the server pod exists and is Ready
+- **SPIRE Server Health**: Verifies container readiness (health probes passed) and service exists
+- **SPIRE Agent DaemonSet Status**: Verifies all agent pods are ready
+- **SPIRE Agent Health**: Verifies agent pod readiness
+- **Agent-Server Communication**: Verifies agents can communicate with the server (checks logs for successful attestation)
+
+The smoke test will exit with a non-zero status code if any checks fail, making it suitable for CI/CD pipelines.
+
+**Example usage after environment setup:**
+
+```bash
+# Set up the environment
+make env-up
+
+# Validate everything is working
+make smoke-test
+
+# If smoke-test passes, the environment is ready for development
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Cluster Not Found
+
+**Error**: `kind cluster 'spiffe-helper' does not exist`
+
+**Solution**: Run `make cluster-up` to create the cluster.
+
+#### Certificates Missing
+
+**Error**: `CA certificate files not found`
+
+**Solution**: Run `make certs` to generate the required certificates.
+
+#### SPIRE Server Not Ready
+
+**Symptoms**: Pod exists but is not in Ready state
+
+**Diagnosis**:
+```bash
+export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+kubectl get pods -n spire-server
+kubectl logs -n spire-server -l app=spire-server
+```
+
+**Common causes**:
+- Server is still starting up (wait a few minutes)
+- Certificate issues (check logs for certificate errors)
+- Port conflicts (ensure port 8081 is available)
+
+#### SPIRE Agent Not Attesting
+
+**Symptoms**: Agent pods are running but not ready
+
+**Diagnosis**:
+```bash
+export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+kubectl get pods -n spire-agent
+kubectl logs -n spire-agent -l app=spire-agent
+```
+
+**Common causes**:
+- Server not ready (ensure server is healthy first)
+- Bootstrap bundle mismatch (regenerate certificates with `make clean && make certs`)
+- RBAC issues (check ClusterRole and ClusterRoleBinding)
+
+#### Smoke Test Failures
+
+If `make smoke-test` fails:
+
+1. **Check component status individually**:
+   ```bash
+   make check-spire-server
+   kubectl get pods -n spire-agent
+   ```
+
+2. **Review logs**:
+   ```bash
+   export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+   kubectl logs -n spire-server -l app=spire-server
+   kubectl logs -n spire-agent -l app=spire-agent
+   ```
+
+3. **Verify certificates**:
+   ```bash
+   ls -la artifacts/certs/
+   ```
+
+4. **Restart components**:
+   ```bash
+   make env-down
+   make env-up
+   make smoke-test
+   ```
+
+### Manual Verification Steps
+
+After deployment, you can manually verify the environment:
+
+```bash
+export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+
+# Check server pod status and logs
+kubectl get pods -n spire-server
+kubectl logs -n spire-server spire-server-0
+
+# Check agent pod status and logs
+kubectl get pods -n spire-agent
+kubectl logs -n spire-agent <agent-pod-name>
+
+# List registered entries
+kubectl exec -n spire-server spire-server-0 -- spire-server entry show
+```
+
+## Important Notes
+
+### Generated Files and Git Policy
+
+**⚠️ CRITICAL: Never commit generated files to git**
+
+This repository uses `.gitignore` to exclude generated artifacts:
+
+- **Certificates and keys** (`./artifacts/certs/`) - Contains sensitive cryptographic material
+- **Kubeconfig files** (`./artifacts/kubeconfig`) - Contains cluster access credentials
+- **Build artifacts** (`./target/`, `./bin/`) - Contains compiled binaries
+
+**All generated files live under gitignored directories and must not be committed.**
+
+The following directories are gitignored:
+- `/artifacts/` - All certificates, keys, and kubeconfig files
+- `/target/` - Rust build artifacts
+- `/bin/` - Compiled binaries
+
+**Before committing**, always verify:
+```bash
+git status
+```
+
+If you see any files from the above directories, **do not commit them**. They are intentionally excluded for security and cleanliness.
+
+### Certificate Security
+
+The certificates generated by `make certs` are:
+- **For testing and development only**
+- **Never use in production**
+- **Generated locally and not shared**
+- **Automatically excluded from git**
+
+For production deployments, use properly managed certificate authorities (CAs) and follow your organization's security policies.
+
+## Make Targets Reference
+
+| Target | Description | Dependencies |
+|--------|-------------|--------------|
+| `tools` | Verify required CLI tools are installed | None |
+| `certs` | Generate SPIRE certificates for testing | None |
+| `clean` | Remove all generated artifacts | None |
+| `cluster-up` | Create or refresh kind cluster | `kind-config.yaml` |
+| `cluster-down` | Delete kind cluster and cleanup | None |
+| `check-cluster` | Verify cluster exists and is accessible | None |
+| `check-certs` | Verify required certificates exist | None |
+| `deploy-spire-server` | Deploy SPIRE server to cluster | `cluster-up`, `certs` |
+| `undeploy-spire-server` | Remove SPIRE server from cluster | None |
+| `check-spire-server` | Display SPIRE server status | `check-cluster` |
+| `deploy-spire-agent` | Deploy SPIRE agents as DaemonSet | `certs` |
+| `undeploy-spire-agent` | Remove SPIRE agents from cluster | None |
+| `deploy-registration` | Register workload entries | `check-cluster` |
+| `undeploy-registration` | Remove workload registrations | None |
+| `smoke-test` | Validate SPIRE environment health | `check-cluster` |
+| `env-up` | Complete environment setup | `tools`, `certs`, `cluster-up`, `deploy-spire-server`, `deploy-spire-agent`, `deploy-registration` |
+| `env-down` | Complete environment teardown | `undeploy-registration`, `undeploy-spire-agent`, `undeploy-spire-server`, `cluster-down`, `clean` |
