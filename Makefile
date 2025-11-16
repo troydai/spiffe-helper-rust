@@ -9,6 +9,7 @@ DEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-agent.sh
 UNDEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-agent.sh
 DEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/deploy-registration.sh
 UNDEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/undeploy-registration.sh
+SMOKE_TEST_SCRIPT := $(ROOT_DIR)/scripts/smoke-test.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
 KIND_CONFIG := $(ROOT_DIR)/kind-config.yaml
@@ -137,6 +138,10 @@ deploy-registration: check-cluster
 .PHONY: undeploy-registration
 undeploy-registration:
 	@$(UNDEPLOY_REGISTRATION_SCRIPT)
+
+.PHONY: smoke-test
+smoke-test: check-cluster
+	@KUBECONFIG_PATH="$(KUBECONFIG_PATH)" ROOT_DIR="$(ROOT_DIR)" $(SMOKE_TEST_SCRIPT)
 
 # Top-level orchestration targets
 .PHONY: env-up
