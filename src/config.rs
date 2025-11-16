@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use hcl::Value;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -48,13 +47,13 @@ pub fn parse_hcl_config(path: &Path) -> Result<Config> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
-    let value: Value = hcl::from_str(&content)
+    let value: hcl::Value = hcl::from_str(&content)
         .with_context(|| format!("Failed to parse HCL config file: {}", path.display()))?;
 
     parse_hcl_value_to_config(&value)
 }
 
-fn parse_hcl_value_to_config(value: &Value) -> Result<Config> {
+fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
     let mut config = Config {
         agent_address: None,
         cmd: None,
@@ -79,7 +78,7 @@ fn parse_hcl_value_to_config(value: &Value) -> Result<Config> {
         health_checks: None,
     };
 
-    if let Value::Object(attrs) = value {
+    if let hcl::Value::Object(attrs) = value {
         for (key, val) in attrs {
             match key.as_str() {
                 "agent_address" => {
@@ -155,23 +154,23 @@ fn parse_hcl_value_to_config(value: &Value) -> Result<Config> {
     Ok(config)
 }
 
-fn extract_string(val: &Value) -> Option<String> {
+fn extract_string(val: &hcl::Value) -> Option<String> {
     match val {
-        Value::String(s) => Some(s.clone()),
+        hcl::Value::String(s) => Some(s.clone()),
         _ => None,
     }
 }
 
-fn extract_bool(val: &Value) -> Option<bool> {
+fn extract_bool(val: &hcl::Value) -> Option<bool> {
     match val {
-        Value::Bool(b) => Some(*b),
+        hcl::Value::Bool(b) => Some(*b),
         _ => None,
     }
 }
 
-fn extract_jwt_svids(val: &Value) -> Option<Vec<JwtSvid>> {
+fn extract_jwt_svids(val: &hcl::Value) -> Option<Vec<JwtSvid>> {
     let arr = match val {
-        Value::Array(arr) => arr,
+        hcl::Value::Array(arr) => arr,
         _ => return None,
     };
 
@@ -184,9 +183,9 @@ fn extract_jwt_svids(val: &Value) -> Option<Vec<JwtSvid>> {
     }
 }
 
-fn parse_jwt_svid(value: &Value) -> Option<JwtSvid> {
+fn parse_jwt_svid(value: &hcl::Value) -> Option<JwtSvid> {
     let obj = match value {
-        Value::Object(obj) => obj,
+        hcl::Value::Object(obj) => obj,
         _ => return None,
     };
 
@@ -219,9 +218,9 @@ fn parse_jwt_svid(value: &Value) -> Option<JwtSvid> {
     }
 }
 
-fn extract_string_array(val: &Value) -> Option<Vec<String>> {
+fn extract_string_array(val: &hcl::Value) -> Option<Vec<String>> {
     match val {
-        Value::Array(arr) => {
+        hcl::Value::Array(arr) => {
             let mut strings = Vec::new();
             for item in arr {
                 if let Some(s) = extract_string(item) {
@@ -238,9 +237,9 @@ fn extract_string_array(val: &Value) -> Option<Vec<String>> {
     }
 }
 
-fn extract_health_checks(val: &Value) -> Option<HealthChecks> {
+fn extract_health_checks(val: &hcl::Value) -> Option<HealthChecks> {
     match val {
-        Value::Object(obj) => {
+        hcl::Value::Object(obj) => {
             let mut health_checks = HealthChecks {
                 listener_enabled: None,
                 bind_port: None,
@@ -272,9 +271,9 @@ fn extract_health_checks(val: &Value) -> Option<HealthChecks> {
     }
 }
 
-fn extract_number_as_u16(val: &Value) -> Option<u16> {
+fn extract_number_as_u16(val: &hcl::Value) -> Option<u16> {
     match val {
-        Value::Number(n) => {
+        hcl::Value::Number(n) => {
             if let Some(num) = n.as_u64() {
                 if num <= u16::MAX as u64 {
                     Some(num as u16)
