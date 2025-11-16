@@ -278,10 +278,10 @@ make smoke-test
 This target runs comprehensive health checks:
 - **Cluster Connectivity**: Verifies the Kubernetes cluster is accessible
 - **SPIRE Server Pod Status**: Checks that the server pod exists and is Ready
-- **SPIRE Server Health Check**: Executes `spire-server healthcheck` command
+- **SPIRE Server Health**: Verifies container readiness (health probes passed) and service exists
 - **SPIRE Agent DaemonSet Status**: Verifies all agent pods are ready
-- **SPIRE Agent Health Check**: Executes `spire-agent healthcheck` command (if available)
-- **Agent-Server Communication**: Verifies agents can communicate with the server
+- **SPIRE Agent Health**: Verifies agent pod readiness
+- **Agent-Server Communication**: Verifies agents can communicate with the server (checks logs for successful attestation)
 
 The smoke test will exit with a non-zero status code if any checks fail, making it suitable for CI/CD pipelines.
 
@@ -381,11 +381,13 @@ After deployment, you can manually verify the environment:
 ```bash
 export KUBECONFIG=$(pwd)/artifacts/kubeconfig
 
-# Check server health
-kubectl exec -n spire-server spire-server-0 -- spire-server healthcheck
+# Check server pod status and logs
+kubectl get pods -n spire-server
+kubectl logs -n spire-server spire-server-0
 
-# Check agent health (if available)
-kubectl exec -n spire-agent <agent-pod-name> -- spire-agent healthcheck
+# Check agent pod status and logs
+kubectl get pods -n spire-agent
+kubectl logs -n spire-agent <agent-pod-name>
 
 # List registered entries
 kubectl exec -n spire-server spire-server-0 -- spire-server entry show
