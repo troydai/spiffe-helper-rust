@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source color support
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/colors.sh"
+
 info() {
-  echo "[tools] $*"
+  echo -e "${COLOR_CYAN}[tools]${COLOR_RESET} $*"
 }
 
 error() {
-  echo "[tools] $*" >&2
+  echo -e "${COLOR_RED}[tools]${COLOR_RESET} $*" >&2
 }
 
 get_tool_docs() {
@@ -69,16 +73,17 @@ check_tool() {
   if command -v "${name}" >/dev/null 2>&1; then
     local version_info
     if version_info="$(print_version "${name}")"; then
-      info "found ${name}: ${version_info}"
+      echo -e "${COLOR_GREEN}✓${COLOR_RESET} ${COLOR_BOLD}${name}${COLOR_RESET}: ${COLOR_CYAN}${version_info}${COLOR_RESET}"
     else
-      info "found ${name}"
+      echo -e "${COLOR_GREEN}✓${COLOR_RESET} ${COLOR_BOLD}${name}${COLOR_RESET}"
     fi
     return 0
   fi
 
   local docs_url
   docs_url="$(get_tool_docs "${name}")"
-  error "missing ${name}. Install instructions: ${docs_url}"
+  echo -e "${COLOR_RED}✗${COLOR_RESET} ${COLOR_BOLD}${name}${COLOR_RESET} ${COLOR_RED}missing${COLOR_RESET}"
+  echo -e "  ${COLOR_YELLOW}Install instructions:${COLOR_RESET} ${COLOR_CYAN}${docs_url}${COLOR_RESET}" >&2
   return 1
 }
 
@@ -91,12 +96,13 @@ main() {
   done
 
   if [[ "${missing}" -eq 1 ]]; then
-    error ""
+    echo ""
     error "Install the missing tool(s) and re-run 'make tools'."
     exit 1
   fi
 
-  info "all required tools are available."
+  echo ""
+  echo -e "${COLOR_BRIGHT_GREEN}[tools]${COLOR_RESET} ${COLOR_BOLD}All required tools are available!${COLOR_RESET}"
 }
 
 main "$@"
