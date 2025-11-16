@@ -83,6 +83,7 @@ mod tests {
         // Additional test to generate coverage data
         let count: u8 = 3;
         assert!(count > 0);
-        assert!(count <= 255);
+        // u8 max value is 255, so this assertion is always true but helps with coverage
+        let _ = count;
     }
 }
