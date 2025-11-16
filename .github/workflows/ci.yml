@@ -119,14 +119,6 @@ jobs:
       - name: Generate coverage report
         run: cargo llvm-cov --all-features --workspace --summary-only
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./lcov.info
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
