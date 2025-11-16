@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthChecks {
@@ -43,7 +42,7 @@ pub struct Config {
     pub health_checks: Option<HealthChecks>,
 }
 
-pub fn parse_hcl_config(path: &Path) -> Result<Config> {
+pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
@@ -155,17 +154,17 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
 }
 
 fn extract_string(val: &hcl::Value) -> Option<String> {
-    match val {
-        hcl::Value::String(s) => Some(s.clone()),
-        _ => None,
+    if let hcl::Value::String(s) = val {
+        return Some(s.clone());
     }
+    None
 }
 
 fn extract_bool(val: &hcl::Value) -> Option<bool> {
-    match val {
-        hcl::Value::Bool(b) => Some(*b),
-        _ => None,
+    if let hcl::Value::Bool(b) = val {
+        return Some(*b);
     }
+    None
 }
 
 fn extract_jwt_svids(val: &hcl::Value) -> Option<Vec<JwtSvid>> {

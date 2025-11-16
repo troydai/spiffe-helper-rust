@@ -1,11 +1,17 @@
 mod config;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_CONFIG_FILE: &str = "helper.conf";
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum DaemonModeFlag {
+    True,
+    False,
+}
 
 /// SPIFFE Helper - A utility for fetching X.509 SVID certificates from the SPIFFE Workload API
 #[derive(Parser, Debug)]
@@ -17,8 +23,8 @@ struct Args {
     config: String,
 
     /// Boolean true or false. Overrides daemon_mode in the config file.
-    #[arg(long, value_name = "true|false")]
-    daemon_mode: Option<String>,
+    #[arg(long, value_enum)]
+    daemon_mode: Option<DaemonModeFlag>,
 
     /// Print version number
     #[arg(short = 'v', long)]
@@ -35,20 +41,10 @@ fn main() -> Result<()> {
     }
 
     // Parse daemon_mode override
-    let daemon_mode_override = if let Some(dm_str) = &args.daemon_mode {
-        match dm_str.as_str() {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => {
-                anyhow::bail!(
-                    "Invalid value for -daemon-mode: {}. Must be 'true' or 'false'",
-                    dm_str
-                );
-            }
-        }
-    } else {
-        None
-    };
+    let daemon_mode_override = args.daemon_mode.map(|flag| match flag {
+        DaemonModeFlag::True => true,
+        DaemonModeFlag::False => false,
+    });
 
     // Parse config file
     let config_path = PathBuf::from(&args.config);
