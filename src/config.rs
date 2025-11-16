@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthChecks {
-    pub listener_enabled: Option<bool>,
-    pub bind_port: Option<u16>,
+    pub listener_enabled: bool,
+    pub bind_port: u16,
     pub liveness_path: Option<String>,
     pub readiness_path: Option<String>,
 }
@@ -81,67 +81,67 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
         for (key, val) in attrs {
             match key.as_str() {
                 "agent_address" => {
-                    config.agent_address = extract_string(val);
+                    config.agent_address = extract_string(val)?;
                 }
                 "cmd" => {
-                    config.cmd = extract_string(val);
+                    config.cmd = extract_string(val)?;
                 }
                 "cmd_args" => {
-                    config.cmd_args = extract_string(val);
+                    config.cmd_args = extract_string(val)?;
                 }
                 "pid_file_name" => {
-                    config.pid_file_name = extract_string(val);
+                    config.pid_file_name = extract_string(val)?;
                 }
                 "cert_dir" => {
-                    config.cert_dir = extract_string(val);
+                    config.cert_dir = extract_string(val)?;
                 }
                 "daemon_mode" => {
-                    config.daemon_mode = extract_bool(val);
+                    config.daemon_mode = extract_bool(val)?;
                 }
                 "add_intermediates_to_bundle" => {
-                    config.add_intermediates_to_bundle = extract_bool(val);
+                    config.add_intermediates_to_bundle = extract_bool(val)?;
                 }
                 "renew_signal" => {
-                    config.renew_signal = extract_string(val);
+                    config.renew_signal = extract_string(val)?;
                 }
                 "svid_file_name" => {
-                    config.svid_file_name = extract_string(val);
+                    config.svid_file_name = extract_string(val)?;
                 }
                 "svid_key_file_name" => {
-                    config.svid_key_file_name = extract_string(val);
+                    config.svid_key_file_name = extract_string(val)?;
                 }
                 "svid_bundle_file_name" => {
-                    config.svid_bundle_file_name = extract_string(val);
+                    config.svid_bundle_file_name = extract_string(val)?;
                 }
                 "jwt_svids" => {
-                    config.jwt_svids = extract_jwt_svids(val);
+                    config.jwt_svids = extract_jwt_svids(val)?;
                 }
                 "jwt_bundle_file_name" => {
-                    config.jwt_bundle_file_name = extract_string(val);
+                    config.jwt_bundle_file_name = extract_string(val)?;
                 }
                 "include_federated_domains" => {
-                    config.include_federated_domains = extract_bool(val);
+                    config.include_federated_domains = extract_bool(val)?;
                 }
                 "cert_file_mode" => {
-                    config.cert_file_mode = extract_string(val);
+                    config.cert_file_mode = extract_string(val)?;
                 }
                 "key_file_mode" => {
-                    config.key_file_mode = extract_string(val);
+                    config.key_file_mode = extract_string(val)?;
                 }
                 "jwt_bundle_file_mode" => {
-                    config.jwt_bundle_file_mode = extract_string(val);
+                    config.jwt_bundle_file_mode = extract_string(val)?;
                 }
                 "jwt_svid_file_mode" => {
-                    config.jwt_svid_file_mode = extract_string(val);
+                    config.jwt_svid_file_mode = extract_string(val)?;
                 }
                 "hint" => {
-                    config.hint = extract_string(val);
+                    config.hint = extract_string(val)?;
                 }
                 "omit_expired" => {
-                    config.omit_expired = extract_bool(val);
+                    config.omit_expired = extract_bool(val)?;
                 }
                 "health_checks" => {
-                    config.health_checks = extract_health_checks(val);
+                    config.health_checks = extract_health_checks(val)?;
                 }
                 _ => {
                     // Ignore unknown keys
@@ -153,39 +153,43 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
     Ok(config)
 }
 
-fn extract_string(val: &hcl::Value) -> Option<String> {
+fn extract_string(val: &hcl::Value) -> anyhow::Result<Option<String>> {
     if let hcl::Value::String(s) = val {
-        return Some(s.clone());
+        Ok(Some(s.clone()))
+    } else {
+        Err(anyhow!("given value is not a string"))
     }
-    None
 }
 
-fn extract_bool(val: &hcl::Value) -> Option<bool> {
+fn extract_bool(val: &hcl::Value) -> anyhow::Result<Option<bool>> {
     if let hcl::Value::Bool(b) = val {
-        return Some(*b);
+        Ok(Some(*b))
+    } else {
+        Err(anyhow!("given value is not a boolean"))
     }
-    None
 }
 
-fn extract_jwt_svids(val: &hcl::Value) -> Option<Vec<JwtSvid>> {
-    let arr = match val {
-        hcl::Value::Array(arr) => arr,
-        _ => return None,
+fn extract_jwt_svids(val: &hcl::Value) -> anyhow::Result<Option<Vec<JwtSvid>>> {
+    let arr = if let hcl::Value::Array(arr) = val {
+        arr
+    } else {
+        return Err(anyhow!("given value is not an array"));
     };
 
     let jwt_svids: Vec<JwtSvid> = arr.iter().filter_map(parse_jwt_svid).collect();
 
     if jwt_svids.is_empty() {
-        None
+        Ok(None)
     } else {
-        Some(jwt_svids)
+        Ok(Some(jwt_svids))
     }
 }
 
 fn parse_jwt_svid(value: &hcl::Value) -> Option<JwtSvid> {
-    let obj = match value {
-        hcl::Value::Object(obj) => obj,
-        _ => return None,
+    let obj = if let hcl::Value::Object(obj) = value {
+        obj
+    } else {
+        return None;
     };
 
     let mut jwt_audience = None;
@@ -195,137 +199,907 @@ fn parse_jwt_svid(value: &hcl::Value) -> Option<JwtSvid> {
     for (key, val) in obj {
         match key.as_str() {
             "jwt_audience" => {
-                jwt_audience = extract_string(val);
+                jwt_audience = extract_string(val).ok().flatten();
             }
             "jwt_extra_audiences" => {
-                jwt_extra_audiences = extract_string_array(val);
+                jwt_extra_audiences = extract_string_array(val).ok().flatten();
             }
             "jwt_svid_file_name" => {
-                jwt_svid_file_name = extract_string(val);
+                jwt_svid_file_name = extract_string(val).ok().flatten();
             }
             _ => {}
         }
     }
 
-    match (jwt_audience, jwt_svid_file_name) {
-        (Some(jwt_audience), Some(jwt_svid_file_name)) => Some(JwtSvid {
+    if let (Some(jwt_audience), Some(jwt_svid_file_name)) = (jwt_audience, jwt_svid_file_name) {
+        Some(JwtSvid {
             jwt_audience,
             jwt_extra_audiences,
             jwt_svid_file_name,
-        }),
-        _ => None,
+        })
+    } else {
+        None
     }
 }
 
-fn extract_string_array(val: &hcl::Value) -> Option<Vec<String>> {
-    match val {
-        hcl::Value::Array(arr) => {
-            let mut strings = Vec::new();
-            for item in arr {
-                if let Some(s) = extract_string(item) {
-                    strings.push(s);
-                }
-            }
-            if strings.is_empty() {
-                None
-            } else {
-                Some(strings)
+fn extract_string_array(val: &hcl::Value) -> anyhow::Result<Option<Vec<String>>> {
+    if let hcl::Value::Array(arr) = val {
+        let mut strings = Vec::new();
+        for item in arr {
+            let result = extract_string(item)?;
+            if let Some(s) = result {
+                strings.push(s);
             }
         }
-        _ => None,
+        Ok(Some(strings))
+    } else {
+        Err(anyhow!("given value is not an array"))
     }
 }
 
-fn extract_health_checks(val: &hcl::Value) -> Option<HealthChecks> {
-    match val {
-        hcl::Value::Object(obj) => {
-            let mut health_checks = HealthChecks {
-                listener_enabled: None,
-                bind_port: None,
-                liveness_path: None,
-                readiness_path: None,
-            };
+/// extract the health check configuration
+/// 
+/// The default port is 8080.
+fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks>> {
+    if let Some(map) = val.as_object() {
+        let mut retval = HealthChecks {
+            listener_enabled: false,
+            bind_port: 8080,
+            liveness_path: None,
+            readiness_path: None,
+        };
 
-            for (key, val) in obj {
-                match key.as_str() {
-                    "listener_enabled" => {
-                        health_checks.listener_enabled = extract_bool(val);
-                    }
-                    "bind_port" => {
-                        health_checks.bind_port = extract_port(val).ok();
-                    }
-                    "liveness_path" => {
-                        health_checks.liveness_path = extract_string(val);
-                    }
-                    "readiness_path" => {
-                        health_checks.readiness_path = extract_string(val);
-                    }
-                    _ => {}
-                }
-            }
-
-            Some(health_checks)
+        if let Some(v) = map.get("listener_enabled") {
+            retval.listener_enabled = extract_bool(v)?.unwrap_or(false);
         }
-        _ => None,
+
+        // short circuit when health check is not enabled
+        if !retval.listener_enabled {
+            return Ok(Some(retval))
+        }
+
+        if let Some(v) = map.get("bind_port") {
+            retval.bind_port = extract_port(v)?;
+        }
+
+        if let Some(v) = map.get("liveness_path") {
+            retval.liveness_path = extract_string(v)?;
+        }
+
+        if let Some(v) = map.get("readiness_path") {
+            retval.readiness_path = extract_string(v)?;
+        }
+
+        return Ok(Some(retval))
     }
+
+    Err(anyhow!("given HCL value is not a block for health check"))
 }
 
 /// extract a port number from the HCL value
-/// 
-/// If port number is beyond the legal range [0,65535], an error will be returned. 
+///
+/// If port number is beyond the legal range [0,65535], an error will be returned.
 fn extract_port(val: &hcl::Value) -> anyhow::Result<u16> {
     if let Some(num) = val.as_u64() {
         if num > 65535 {
-            return Err(anyhow::anyhow!("port number MUST not be larger than 65535"))
+            return Err(anyhow::anyhow!("port number MUST not be larger than 65535"));
         }
 
-        return Ok(num as u16)
+        return Ok(num as u16);
     }
 
-    Err(anyhow::anyhow!("given value is not a number"))
+    Err(anyhow!("given value is not a number"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_extract_port_valid() {
-        // Test valid port numbers
-        assert_eq!(extract_port(&hcl::Value::Number(0u64.into())).unwrap(), 0);
-        assert_eq!(extract_port(&hcl::Value::Number(1u64.into())).unwrap(), 1);
-        assert_eq!(extract_port(&hcl::Value::Number(8080u64.into())).unwrap(), 8080);
-        assert_eq!(extract_port(&hcl::Value::Number(65535u64.into())).unwrap(), 65535);
+    fn parse_hcl_value(hcl_str: &str) -> hcl::Value {
+        hcl::from_str(hcl_str).expect("Failed to parse HCL")
+    }
+
+    fn parse_hcl_simple_value(hcl_str: &str) -> hcl::Value {
+        // For simple values, wrap in a key-value pair and extract the value
+        let wrapped = format!("key = {}", hcl_str);
+        let value = parse_hcl_value(&wrapped);
+        if let hcl::Value::Object(obj) = value {
+            obj.get("key").cloned().expect("key not found")
+        } else {
+            panic!("Expected object")
+        }
     }
 
     #[test]
-    fn test_extract_port_invalid_too_large() {
-        // Test port numbers beyond u16 range
-        let result = extract_port(&hcl::Value::Number(65536u64.into()));
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("65535"));
+    fn test_extract_string_valid() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""test""#);
 
-        let result = extract_port(&hcl::Value::Number(100000u64.into()));
+        // Act
+        let result = extract_string(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, Some("test".to_string()));
+    }
+
+    #[test]
+    fn test_extract_string_empty() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""""#);
+
+        // Act
+        let result = extract_string(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_extract_string_invalid_bool() {
+        // Arrange
+        let value = parse_hcl_simple_value("true");
+
+        // Act
+        let result = extract_string(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a string"));
+    }
+
+    #[test]
+    fn test_extract_string_invalid_number() {
+        // Arrange
+        let value = parse_hcl_simple_value("42");
+
+        // Act
+        let result = extract_string(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a string"));
+    }
+
+    #[test]
+    fn test_extract_string_invalid_array() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let result = extract_string(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a string"));
+    }
+
+    #[test]
+    fn test_extract_string_invalid_object() {
+        // Arrange
+        let value = parse_hcl_simple_value("{}");
+
+        // Act
+        let result = extract_string(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a string"));
+    }
+
+    #[test]
+    fn test_extract_bool_true() {
+        // Arrange
+        let value = parse_hcl_simple_value("true");
+
+        // Act
+        let result = extract_bool(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, Some(true));
+    }
+
+    #[test]
+    fn test_extract_bool_false() {
+        // Arrange
+        let value = parse_hcl_simple_value("false");
+
+        // Act
+        let result = extract_bool(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, Some(false));
+    }
+
+    #[test]
+    fn test_extract_bool_invalid_string() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""true""#);
+
+        // Act
+        let result = extract_bool(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a boolean"));
+    }
+
+    #[test]
+    fn test_extract_bool_invalid_number() {
+        // Arrange
+        let value = parse_hcl_simple_value("1");
+
+        // Act
+        let result = extract_bool(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a boolean"));
+    }
+
+    #[test]
+    fn test_extract_bool_invalid_array() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let result = extract_bool(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a boolean"));
+    }
+
+    #[test]
+    fn test_extract_bool_invalid_object() {
+        // Arrange
+        let value = parse_hcl_simple_value("{}");
+
+        // Act
+        let result = extract_bool(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a boolean"));
+    }
+
+    #[test]
+    fn test_extract_string_array_valid() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#"["a", "b", "c"]"#);
+
+        // Act
+        let result = extract_string_array(&value).unwrap();
+
+        // Assert
+        assert_eq!(
+            result,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_extract_string_array_empty() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let result = extract_string_array(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, Some(vec![]));
+    }
+
+    #[test]
+    fn test_extract_string_array_mixed_types() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#"["a", true, "b"]"#);
+
+        // Act
+        let result = extract_string_array(&value);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_string_array_only_non_strings() {
+        // Arrange
+        let value = parse_hcl_simple_value("[true, 42]");
+
+        // Act
+        let result = extract_string_array(&value);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_string_array_invalid_string() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""test""#);
+
+        // Act
+        let result = extract_string_array(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not an array"));
+    }
+
+    #[test]
+    fn test_extract_string_array_invalid_bool() {
+        // Arrange
+        let value = parse_hcl_simple_value("true");
+
+        // Act
+        let result = extract_string_array(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not an array"));
+    }
+
+    #[test]
+    fn test_extract_string_array_invalid_object() {
+        // Arrange
+        let value = parse_hcl_simple_value("{}");
+
+        // Act
+        let result = extract_string_array(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not an array"));
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_valid() {
+        // Arrange
+        let hcl_str = r#"
+            jwt_audience = "audience1"
+            jwt_svid_file_name = "svid1.jwt"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+        let obj = if let hcl::Value::Object(obj) = value {
+            obj
+        } else {
+            panic!("Expected object");
+        };
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&hcl::Value::Object(obj));
+
+        // Assert
+        assert!(jwt_svid.is_some());
+        let jwt_svid = jwt_svid.unwrap();
+        assert_eq!(jwt_svid.jwt_audience, "audience1");
+        assert_eq!(jwt_svid.jwt_svid_file_name, "svid1.jwt");
+        assert_eq!(jwt_svid.jwt_extra_audiences, None);
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_with_extra_audiences() {
+        // Arrange
+        let hcl_str = r#"
+            jwt_audience = "audience2"
+            jwt_svid_file_name = "svid2.jwt"
+            jwt_extra_audiences = ["extra1", "extra2"]
+        "#;
+        let value = parse_hcl_value(hcl_str);
+        let obj = if let hcl::Value::Object(obj) = value {
+            obj
+        } else {
+            panic!("Expected object");
+        };
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&hcl::Value::Object(obj));
+
+        // Assert
+        assert!(jwt_svid.is_some());
+        let jwt_svid = jwt_svid.unwrap();
+        assert_eq!(jwt_svid.jwt_audience, "audience2");
+        assert_eq!(jwt_svid.jwt_svid_file_name, "svid2.jwt");
+        assert_eq!(
+            jwt_svid.jwt_extra_audiences,
+            Some(vec!["extra1".to_string(), "extra2".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_missing_file_name() {
+        // Arrange
+        let hcl_str = r#"
+            jwt_audience = "audience3"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+        let obj = if let hcl::Value::Object(obj) = value {
+            obj
+        } else {
+            panic!("Expected object");
+        };
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&hcl::Value::Object(obj));
+
+        // Assert
+        assert!(jwt_svid.is_none());
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_missing_audience() {
+        // Arrange
+        let hcl_str = r#"
+            jwt_svid_file_name = "svid3.jwt"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+        let obj = if let hcl::Value::Object(obj) = value {
+            obj
+        } else {
+            panic!("Expected object");
+        };
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&hcl::Value::Object(obj));
+
+        // Assert
+        assert!(jwt_svid.is_none());
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_invalid_string() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""test""#);
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&value);
+
+        // Assert
+        assert!(jwt_svid.is_none());
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_invalid_array() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&value);
+
+        // Assert
+        assert!(jwt_svid.is_none());
+    }
+
+    #[test]
+    fn test_parse_jwt_svid_invalid_bool() {
+        // Arrange
+        let value = parse_hcl_simple_value("true");
+
+        // Act
+        let jwt_svid = parse_jwt_svid(&value);
+
+        // Assert
+        assert!(jwt_svid.is_none());
+    }
+
+    #[test]
+    fn test_extract_jwt_svids_valid() {
+        // Arrange
+        let hcl_str = r#"
+            jwt_svids = [
+                {
+                    jwt_audience = "audience1"
+                    jwt_svid_file_name = "svid1.jwt"
+                },
+                {
+                    jwt_audience = "audience2"
+                    jwt_svid_file_name = "svid2.jwt"
+                }
+            ]
+        "#;
+        let value = parse_hcl_value(hcl_str);
+        let jwt_svids_val = if let hcl::Value::Object(obj) = &value {
+            obj.get("jwt_svids").expect("jwt_svids not found")
+        } else {
+            panic!("Expected object");
+        };
+
+        // Act
+        let jwt_svids = extract_jwt_svids(jwt_svids_val).unwrap();
+
+        // Assert
+        assert!(jwt_svids.is_some());
+        let jwt_svids = jwt_svids.unwrap();
+        assert_eq!(jwt_svids.len(), 2);
+        assert_eq!(jwt_svids[0].jwt_audience, "audience1");
+        assert_eq!(jwt_svids[1].jwt_audience, "audience2");
+    }
+
+    #[test]
+    fn test_extract_jwt_svids_empty() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let result = extract_jwt_svids(&value).unwrap();
+
+        // Assert
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_jwt_svids_invalid_entries() {
+        // Arrange
+        let hcl_str = r#"
+            jwt_svids = [
+                {
+                    jwt_audience = "audience3"
+                },
+                "invalid"
+            ]
+        "#;
+        let value = parse_hcl_value(hcl_str);
+        let jwt_svids_val = if let hcl::Value::Object(obj) = &value {
+            obj.get("jwt_svids").expect("jwt_svids not found")
+        } else {
+            panic!("Expected object");
+        };
+
+        // Act
+        let result = extract_jwt_svids(jwt_svids_val).unwrap();
+
+        // Assert
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_jwt_svids_invalid_string() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""test""#);
+
+        // Act
+        let result = extract_jwt_svids(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not an array"));
+    }
+
+    #[test]
+    fn test_extract_jwt_svids_invalid_bool() {
+        // Arrange
+        let value = parse_hcl_simple_value("true");
+
+        // Act
+        let result = extract_jwt_svids(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not an array"));
+    }
+
+    #[test]
+    fn test_extract_jwt_svids_invalid_object() {
+        // Arrange
+        let value = parse_hcl_simple_value("{}");
+
+        // Act
+        let result = extract_jwt_svids(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not an array"));
+    }
+
+    #[test]
+    fn test_extract_health_checks_disabled() {
+        // Arrange
+        let hcl_str = r#"
+            listener_enabled = false
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let health_checks = result.unwrap().unwrap();
+        assert_eq!(health_checks.listener_enabled, false);
+        assert_eq!(health_checks.bind_port, 8080); // default
+        assert_eq!(health_checks.liveness_path, None);
+        assert_eq!(health_checks.readiness_path, None);
+    }
+
+    #[test]
+    fn test_extract_health_checks_enabled() {
+        // Arrange
+        let hcl_str = r#"
+            listener_enabled = true
+            bind_port = 9090
+            liveness_path = "/health/live"
+            readiness_path = "/health/ready"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let health_checks = result.unwrap().unwrap();
+        assert_eq!(health_checks.listener_enabled, true);
+        assert_eq!(health_checks.bind_port, 9090);
+        assert_eq!(health_checks.liveness_path, Some("/health/live".to_string()));
+        assert_eq!(health_checks.readiness_path, Some("/health/ready".to_string()));
+    }
+
+    #[test]
+    fn test_extract_health_checks_partial() {
+        // Arrange
+        let hcl_str = r#"
+            listener_enabled = true
+            bind_port = 3000
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let health_checks = result.unwrap().unwrap();
+        assert_eq!(health_checks.listener_enabled, true);
+        assert_eq!(health_checks.bind_port, 3000);
+        assert_eq!(health_checks.liveness_path, None);
+        assert_eq!(health_checks.readiness_path, None);
+    }
+
+    #[test]
+    fn test_extract_health_checks_defaults() {
+        // Arrange
+        let hcl_str = r#"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let health_checks = result.unwrap().unwrap();
+        assert_eq!(health_checks.listener_enabled, false);
+        assert_eq!(health_checks.bind_port, 8080);
+        assert_eq!(health_checks.liveness_path, None);
+        assert_eq!(health_checks.readiness_path, None);
+    }
+
+    #[test]
+    fn test_extract_health_checks_invalid_port() {
+        // Arrange
+        let hcl_str = r#"
+            listener_enabled = true
+            bind_port = 65536
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("65535"));
     }
 
     #[test]
-    fn test_extract_port_invalid_non_number() {
-        // Test non-number values
-        let result = extract_port(&hcl::Value::String("8080".to_string()));
+    fn test_extract_health_checks_invalid_string() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""test""#);
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a block"));
+    }
+
+    #[test]
+    fn test_extract_health_checks_invalid_array() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let result = extract_health_checks(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a block"));
+    }
+
+    #[test]
+    fn test_parse_hcl_value_to_config() {
+        // Arrange
+        let hcl_str = r#"
+            agent_address = "unix:///tmp/agent.sock"
+            cmd = "/usr/bin/myapp"
+            cmd_args = "--flag value"
+            daemon_mode = true
+            cert_dir = "/etc/certs"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = parse_hcl_value_to_config(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.agent_address, Some("unix:///tmp/agent.sock".to_string()));
+        assert_eq!(config.cmd, Some("/usr/bin/myapp".to_string()));
+        assert_eq!(config.cmd_args, Some("--flag value".to_string()));
+        assert_eq!(config.daemon_mode, Some(true));
+        assert_eq!(config.cert_dir, Some("/etc/certs".to_string()));
+    }
+
+    #[test]
+    fn test_parse_hcl_value_to_config_empty() {
+        // Arrange
+        let hcl_str = r#"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = parse_hcl_value_to_config(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.agent_address, None);
+        assert_eq!(config.cmd, None);
+        assert_eq!(config.daemon_mode, None);
+    }
+
+    #[test]
+    fn test_parse_hcl_value_to_config_unknown_keys() {
+        // Arrange
+        let hcl_str = r#"
+            unknown_key = "value"
+            agent_address = "unix:///tmp/agent.sock"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        // Act
+        let result = parse_hcl_value_to_config(&value);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.agent_address, Some("unix:///tmp/agent.sock".to_string()));
+    }
+
+    #[test]
+    fn test_extract_port_zero() {
+        // Arrange
+        let value = parse_hcl_simple_value("0");
+
+        // Act
+        let result = extract_port(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_extract_port_one() {
+        // Arrange
+        let value = parse_hcl_simple_value("1");
+
+        // Act
+        let result = extract_port(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_extract_port_common() {
+        // Arrange
+        let value = parse_hcl_simple_value("8080");
+
+        // Act
+        let result = extract_port(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, 8080);
+    }
+
+    #[test]
+    fn test_extract_port_max() {
+        // Arrange
+        let value = parse_hcl_simple_value("65535");
+
+        // Act
+        let result = extract_port(&value).unwrap();
+
+        // Assert
+        assert_eq!(result, 65535);
+    }
+
+    #[test]
+    fn test_extract_port_invalid_too_large_boundary() {
+        // Arrange
+        let value = parse_hcl_simple_value("65536");
+
+        // Act
+        let result = extract_port(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("65535"));
+    }
+
+    #[test]
+    fn test_extract_port_invalid_too_large_extreme() {
+        // Arrange
+        let value = parse_hcl_simple_value("100000");
+
+        // Act
+        let result = extract_port(&value);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("65535"));
+    }
+
+    #[test]
+    fn test_extract_port_invalid_string() {
+        // Arrange
+        let value = parse_hcl_simple_value(r#""8080""#);
+
+        // Act
+        let result = extract_port(&value);
+
+        // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a number"));
+    }
 
-        let result = extract_port(&hcl::Value::Bool(true));
+    #[test]
+    fn test_extract_port_invalid_bool() {
+        // Arrange
+        let value = parse_hcl_simple_value("true");
+
+        // Act
+        let result = extract_port(&value);
+
+        // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a number"));
+    }
 
-        let result = extract_port(&hcl::Value::Array(vec![]));
+    #[test]
+    fn test_extract_port_invalid_array() {
+        // Arrange
+        let value = parse_hcl_simple_value("[]");
+
+        // Act
+        let result = extract_port(&value);
+
+        // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a number"));
+    }
 
-        let result = extract_port(&hcl::Value::Object(Default::default()));
+    #[test]
+    fn test_extract_port_invalid_object() {
+        // Arrange
+        let value = parse_hcl_simple_value("{}");
+
+        // Act
+        let result = extract_port(&value);
+
+        // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a number"));
     }
