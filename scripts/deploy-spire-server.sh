@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source color support
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/colors.sh"
+
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 DEPLOY_DIR="${DEPLOY_DIR:-${ROOT_DIR}/deploy/spire/server}"
@@ -15,17 +19,17 @@ SERVER_CERT="${CERT_DIR}/spire-server-cert.pem"
 SERVER_KEY="${CERT_DIR}/spire-server-key.pem"
 BOOTSTRAP_BUNDLE="${CERT_DIR}/bootstrap-bundle.pem"
 
-echo "[deploy] Deploying SPIRE server..."
-echo "[deploy] Creating namespace..."
+echo -e "${COLOR_BRIGHT_BLUE}[deploy]${COLOR_RESET} ${COLOR_BOLD}Deploying SPIRE server...${COLOR_RESET}"
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating namespace..."
 kubectl apply -f "${DEPLOY_DIR}/namespace.yaml"
 
-echo "[deploy] Creating ServiceAccount..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating ServiceAccount..."
 kubectl apply -f "${DEPLOY_DIR}/serviceaccount.yaml"
-echo "[deploy] Creating ClusterRole and ClusterRoleBinding..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating ClusterRole and ClusterRoleBinding..."
 kubectl apply -f "${DEPLOY_DIR}/clusterrole.yaml"
 kubectl apply -f "${DEPLOY_DIR}/clusterrolebinding.yaml"
 
-echo "[deploy] Creating Secrets from certificates..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating Secrets from certificates..."
 kubectl create secret generic spire-server-tls \
 	--from-file=server.crt="${SERVER_CERT}" \
 	--from-file=server.key="${SERVER_KEY}" \
@@ -43,24 +47,25 @@ kubectl create secret generic spire-server-bootstrap \
 	--namespace=spire-server \
 	--dry-run=client -o yaml | kubectl apply -f -
 
-echo "[deploy] Creating ConfigMap..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating ConfigMap..."
 kubectl apply -f "${DEPLOY_DIR}/configmap.yaml"
 
-echo "[deploy] Creating Service..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating Service..."
 kubectl apply -f "${DEPLOY_DIR}/service.yaml"
 
-echo "[deploy] Creating StatefulSet..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating StatefulSet..."
 kubectl apply -f "${DEPLOY_DIR}/statefulset.yaml"
 
-echo "[deploy] Waiting for StatefulSet rollout..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Waiting for StatefulSet rollout..."
 kubectl rollout status statefulset/spire-server -n spire-server --timeout=300s
 
-echo "[deploy] Waiting for pod to be ready..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Waiting for pod to be ready..."
 if ! kubectl wait --for=condition=ready pod -l app=spire-server -n spire-server --timeout=300s; then
-	echo "[deploy] Warning: Pod may not be fully ready. Check with: kubectl get pods -n spire-server"
+	echo -e "${COLOR_YELLOW}[deploy]${COLOR_RESET} Warning: Pod may not be fully ready. Check with: kubectl get pods -n spire-server"
 	exit 1
 fi
 
-echo "[deploy] SPIRE server deployed successfully!"
-echo "[deploy] Pod status:"
+echo ""
+echo -e "${COLOR_BRIGHT_GREEN}[deploy]${COLOR_RESET} ${COLOR_BOLD}SPIRE server deployed successfully!${COLOR_RESET}"
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Pod status:"
 kubectl get pods -n spire-server

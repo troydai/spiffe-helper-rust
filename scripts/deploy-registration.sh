@@ -1,36 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source color support
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/colors.sh"
+
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
 
-echo "[deploy] Deploying SPIRE workload registration controller..."
+echo -e "${COLOR_BRIGHT_BLUE}[deploy]${COLOR_RESET} ${COLOR_BOLD}Deploying SPIRE workload registration controller...${COLOR_RESET}"
 
 # Check if SPIRE server is running
-echo "[deploy] Checking SPIRE server status..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Checking SPIRE server status..."
 if ! kubectl get pods -n spire-server -l app=spire-server --field-selector=status.phase=Running 2>/dev/null | grep -q Running; then
-	echo "[deploy] Error: SPIRE server is not running. Please deploy it first with 'make deploy-spire-server'"
+	echo -e "${COLOR_RED}[deploy] Error:${COLOR_RESET} SPIRE server is not running. Please deploy it first with 'make deploy-spire-server'"
 	exit 1
 fi
 
 # Check if SPIRE agent is running (optional but recommended)
 if ! kubectl get pods -n spire-agent -l app=spire-agent --field-selector=status.phase=Running 2>/dev/null | grep -q Running; then
-	echo "[deploy] Warning: SPIRE agent is not running. Workloads may not be able to attest."
+	echo -e "${COLOR_YELLOW}[deploy]${COLOR_RESET} Warning: SPIRE agent is not running. Workloads may not be able to attest."
 fi
 
 # Wait for SPIRE server to be ready
-echo "[deploy] Waiting for SPIRE server to be ready..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Waiting for SPIRE server to be ready..."
 SPIRE_SERVER_POD=$(kubectl get pods -n spire-server -l app=spire-server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 if [ -z "${SPIRE_SERVER_POD}" ]; then
-	echo "[deploy] Error: Could not find SPIRE server pod"
+	echo -e "${COLOR_RED}[deploy] Error:${COLOR_RESET} Could not find SPIRE server pod"
 	exit 1
 fi
 
-echo "[deploy] Found SPIRE server pod: ${SPIRE_SERVER_POD}"
+echo -e "${COLOR_GREEN}[deploy]${COLOR_RESET} Found SPIRE server pod: ${COLOR_BOLD}${SPIRE_SERVER_POD}${COLOR_RESET}"
 kubectl wait --for=condition=ready pod/"${SPIRE_SERVER_POD}" -n spire-server --timeout=60s || {
-	echo "[deploy] Warning: SPIRE server pod may not be fully ready"
+	echo -e "${COLOR_YELLOW}[deploy]${COLOR_RESET} Warning: SPIRE server pod may not be fully ready"
 }
 
 # Node alias SPIFFE ID (represents all agents in the cluster)
@@ -38,12 +42,12 @@ NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
 
 # Function to ensure node alias exists
 ensure_node_alias() {
-	echo "[registration] Ensuring node alias exists..."
+	echo -e "${COLOR_CYAN}[registration]${COLOR_RESET} Ensuring node alias exists..."
 	
 	# Check if node alias already exists
 	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
 		/opt/spire/bin/spire-server entry show -spiffeID "${NODE_ALIAS_ID}" 2>/dev/null | grep -q "${NODE_ALIAS_ID}"; then
-		echo "[registration] Node alias ${NODE_ALIAS_ID} already exists"
+		echo -e "${COLOR_YELLOW}[registration]${COLOR_RESET} Node alias ${COLOR_CYAN}${NODE_ALIAS_ID}${COLOR_RESET} already exists"
 		return 0
 	fi
 	
@@ -54,10 +58,10 @@ ensure_node_alias() {
 		-node \
 		-spiffeID "${NODE_ALIAS_ID}" \
 		-selector "k8s_psat:cluster:spiffe-helper" 2>/dev/null; then
-		echo "[registration] Created node alias: ${NODE_ALIAS_ID}"
+		echo -e "${COLOR_GREEN}✓${COLOR_RESET} Created node alias: ${COLOR_CYAN}${NODE_ALIAS_ID}${COLOR_RESET}"
 		return 0
 	else
-		echo "[registration] Warning: Failed to create node alias, but continuing..."
+		echo -e "${COLOR_YELLOW}[registration]${COLOR_RESET} Warning: Failed to create node alias, but continuing..."
 		return 1
 	fi
 }
@@ -68,12 +72,12 @@ register_entry() {
 	local parent_id="$2"
 	local selectors="$3"
 	
-	echo "[registration] Registering entry: ${spiffe_id}"
+	echo -e "${COLOR_CYAN}[registration]${COLOR_RESET} Registering entry: ${COLOR_BOLD}${spiffe_id}${COLOR_RESET}"
 	
 	# Check if entry already exists
 	if kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
 		/opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" 2>/dev/null | grep -q "${spiffe_id}"; then
-		echo "[registration] Entry ${spiffe_id} already exists, skipping..."
+		echo -e "${COLOR_YELLOW}[registration]${COLOR_RESET} Entry ${COLOR_CYAN}${spiffe_id}${COLOR_RESET} already exists, skipping..."
 		return 0
 	fi
 	
@@ -87,7 +91,7 @@ register_entry() {
 	# If parent_id contains a wildcard, use node alias instead
 	if [[ "${parent_id}" == *"*"* ]]; then
 		parent_id="${NODE_ALIAS_ID}"
-		echo "[registration] Using node alias as parent: ${parent_id}"
+		echo -e "${COLOR_CYAN}[registration]${COLOR_RESET} Using node alias as parent: ${COLOR_CYAN}${parent_id}${COLOR_RESET}"
 	fi
 	
 	# Create the entry
@@ -96,10 +100,10 @@ register_entry() {
 		-spiffeID "${spiffe_id}" \
 		-parentID "${parent_id}" \
 		${selector_flags} 2>/dev/null; then
-		echo "[registration] Successfully registered entry: ${spiffe_id}"
+		echo -e "${COLOR_GREEN}✓${COLOR_RESET} Successfully registered entry: ${COLOR_CYAN}${spiffe_id}${COLOR_RESET}"
 		return 0
 	else
-		echo "[registration] Warning: Failed to create entry ${spiffe_id}"
+		echo -e "${COLOR_YELLOW}[registration]${COLOR_RESET} Warning: Failed to create entry ${COLOR_CYAN}${spiffe_id}${COLOR_RESET}"
 		return 1
 	fi
 }
@@ -108,7 +112,7 @@ register_entry() {
 ensure_node_alias
 
 # Register sample workloads
-echo "[deploy] Registering sample workloads..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Registering sample workloads..."
 
 # Sample workload registrations
 # Format: spiffe_id|parent_id|selectors (comma-separated)
@@ -141,13 +145,14 @@ while IFS= read -r line; do
 	fi
 done <<< "${WORKLOADS}"
 
-echo "[deploy] Registered ${REGISTRATION_COUNT} workload entries"
+echo -e "${COLOR_GREEN}[deploy]${COLOR_RESET} Registered ${COLOR_BOLD}${REGISTRATION_COUNT}${COLOR_RESET} workload entries"
 
 # Show registered entries
-echo "[deploy] Listing registered entries..."
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Listing registered entries..."
 kubectl exec -n spire-server "${SPIRE_SERVER_POD}" -- \
 	/opt/spire/bin/spire-server entry show || {
-	echo "[deploy] Warning: Could not list entries"
+	echo -e "${COLOR_YELLOW}[deploy]${COLOR_RESET} Warning: Could not list entries"
 }
 
-echo "[deploy] SPIRE workload registration complete!"
+echo ""
+echo -e "${COLOR_BRIGHT_GREEN}[deploy]${COLOR_RESET} ${COLOR_BOLD}SPIRE workload registration complete!${COLOR_RESET}"

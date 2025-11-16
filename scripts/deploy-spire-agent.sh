@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source color support
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/colors.sh"
+
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 DEPLOY_DIR="${DEPLOY_DIR:-${ROOT_DIR}/deploy/spire/agent}"
@@ -9,35 +13,35 @@ BOOTSTRAP_BUNDLE="${CERT_DIR}/bootstrap-bundle.pem"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
 
-echo "[deploy-spire-agent] Deploying SPIRE agent..."
+echo -e "${COLOR_BRIGHT_BLUE}[deploy-spire-agent]${COLOR_RESET} ${COLOR_BOLD}Deploying SPIRE agent...${COLOR_RESET}"
 
 if [ ! -f "${KUBECONFIG_PATH}" ]; then
-	echo "Error: Kubeconfig not found. Run 'make cluster-up' first."
+	echo -e "${COLOR_RED}[deploy-spire-agent] Error:${COLOR_RESET} Kubeconfig not found. Run 'make cluster-up' first."
 	exit 1
 fi
 
 if [ ! -f "${BOOTSTRAP_BUNDLE}" ]; then
-	echo "Error: Bootstrap bundle not found at ${BOOTSTRAP_BUNDLE}. Run 'make certs' first."
+	echo -e "${COLOR_RED}[deploy-spire-agent] Error:${COLOR_RESET} Bootstrap bundle not found at ${COLOR_CYAN}${BOOTSTRAP_BUNDLE}${COLOR_RESET}. Run 'make certs' first."
 	exit 1
 fi
 
-echo "[deploy-spire-agent] Creating namespace..."
+echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} Creating namespace..."
 kubectl apply -f "${DEPLOY_DIR}/namespace.yaml"
 
-echo "[deploy-spire-agent] Creating bootstrap bundle Secret from ${BOOTSTRAP_BUNDLE}..."
+echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} Creating bootstrap bundle Secret from ${COLOR_CYAN}${BOOTSTRAP_BUNDLE}${COLOR_RESET}..."
 kubectl create secret generic spire-bundle -n spire-agent \
 	--from-file=bundle.pem="${BOOTSTRAP_BUNDLE}" \
 	--dry-run=client -o yaml | \
 	kubectl apply -f -
 
-echo "[deploy-spire-agent] Applying SPIRE agent manifests..."
+echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} Applying SPIRE agent manifests..."
 kubectl apply -f "${DEPLOY_DIR}/serviceaccount.yaml"
 kubectl apply -f "${DEPLOY_DIR}/clusterrole.yaml"
 kubectl apply -f "${DEPLOY_DIR}/clusterrolebinding.yaml"
 kubectl apply -f "${DEPLOY_DIR}/configmap.yaml"
 kubectl apply -f "${DEPLOY_DIR}/daemonset.yaml"
 
-echo "[deploy-spire-agent] Waiting for SPIRE agent DaemonSet to be ready..."
+echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} Waiting for SPIRE agent DaemonSet to be ready..."
 timeout=300
 elapsed=0
 interval=5
@@ -45,22 +49,24 @@ while [ $elapsed -lt $timeout ]; do
 	ready=$(kubectl get daemonset spire-agent -n spire-agent -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
 	desired=$(kubectl get daemonset spire-agent -n spire-agent -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
 	if [ "$ready" = "$desired" ] && [ "$ready" != "0" ]; then
-		echo "[deploy-spire-agent] All $ready/$desired SPIRE agent pods are ready!"
+		echo -e "${COLOR_GREEN}[deploy-spire-agent]${COLOR_RESET} All ${COLOR_BOLD}${ready}/${desired}${COLOR_RESET} SPIRE agent pods are ready!"
 		break
 	fi
-	echo "[deploy-spire-agent] Waiting... ($ready/$desired pods ready)"
+	echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} Waiting... (${COLOR_YELLOW}${ready}/${desired}${COLOR_RESET} pods ready)"
 	sleep $interval
 	elapsed=$((elapsed + interval))
 done
 
 if [ $elapsed -ge $timeout ]; then
-	echo "[deploy-spire-agent] Warning: Timeout waiting for DaemonSet to be ready. Checking status..."
+	echo -e "${COLOR_YELLOW}[deploy-spire-agent]${COLOR_RESET} Warning: Timeout waiting for DaemonSet to be ready. Checking status..."
 	kubectl get daemonset spire-agent -n spire-agent
 	kubectl get pods -l app=spire-agent -n spire-agent
 	exit 1
 fi
 
-echo "[deploy-spire-agent] SPIRE agent DaemonSet status:"
+echo ""
+echo -e "${COLOR_BRIGHT_GREEN}[deploy-spire-agent]${COLOR_RESET} ${COLOR_BOLD}SPIRE agent deployed successfully!${COLOR_RESET}"
+echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} SPIRE agent DaemonSet status:"
 kubectl get daemonset spire-agent -n spire-agent
-echo "[deploy-spire-agent] SPIRE agent pods:"
+echo -e "${COLOR_CYAN}[deploy-spire-agent]${COLOR_RESET} SPIRE agent pods:"
 kubectl get pods -l app=spire-agent -n spire-agent
