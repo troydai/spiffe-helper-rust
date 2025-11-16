@@ -252,7 +252,7 @@ fn extract_health_checks(val: &hcl::Value) -> Option<HealthChecks> {
                         health_checks.listener_enabled = extract_bool(val);
                     }
                     "bind_port" => {
-                        health_checks.bind_port = extract_number_as_u16(val);
+                        health_checks.bind_port = extract_port(val).ok();
                     }
                     "liveness_path" => {
                         health_checks.liveness_path = extract_string(val);
@@ -270,19 +270,63 @@ fn extract_health_checks(val: &hcl::Value) -> Option<HealthChecks> {
     }
 }
 
-fn extract_number_as_u16(val: &hcl::Value) -> Option<u16> {
-    match val {
-        hcl::Value::Number(n) => {
-            if let Some(num) = n.as_u64() {
-                if num <= u16::MAX as u64 {
-                    Some(num as u16)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+/// extract a port number from the HCL value
+/// 
+/// If port number is beyond the legal range [0,65535], an error will be returned. 
+fn extract_port(val: &hcl::Value) -> anyhow::Result<u16> {
+    if let Some(num) = val.as_u64() {
+        if num > 65535 {
+            return Err(anyhow::anyhow!("port number MUST not be larger than 65535"))
         }
-        _ => None,
+
+        return Ok(num as u16)
+    }
+
+    Err(anyhow::anyhow!("given value is not a number"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_port_valid() {
+        // Test valid port numbers
+        assert_eq!(extract_port(&hcl::Value::Number(0u64.into())).unwrap(), 0);
+        assert_eq!(extract_port(&hcl::Value::Number(1u64.into())).unwrap(), 1);
+        assert_eq!(extract_port(&hcl::Value::Number(8080u64.into())).unwrap(), 8080);
+        assert_eq!(extract_port(&hcl::Value::Number(65535u64.into())).unwrap(), 65535);
+    }
+
+    #[test]
+    fn test_extract_port_invalid_too_large() {
+        // Test port numbers beyond u16 range
+        let result = extract_port(&hcl::Value::Number(65536u64.into()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("65535"));
+
+        let result = extract_port(&hcl::Value::Number(100000u64.into()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("65535"));
+    }
+
+    #[test]
+    fn test_extract_port_invalid_non_number() {
+        // Test non-number values
+        let result = extract_port(&hcl::Value::String("8080".to_string()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a number"));
+
+        let result = extract_port(&hcl::Value::Bool(true));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a number"));
+
+        let result = extract_port(&hcl::Value::Array(vec![]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a number"));
+
+        let result = extract_port(&hcl::Value::Object(Default::default()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a number"));
     }
 }
