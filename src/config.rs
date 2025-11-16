@@ -170,45 +170,51 @@ fn extract_bool(val: &Value) -> Option<bool> {
 }
 
 fn extract_jwt_svids(val: &Value) -> Option<Vec<JwtSvid>> {
-    match val {
-        Value::Array(arr) => {
-            let mut jwt_svids = Vec::new();
-            for item in arr {
-                if let Value::Object(obj) = item {
-                    let mut jwt_audience = None;
-                    let mut jwt_extra_audiences = None;
-                    let mut jwt_svid_file_name = None;
+    let arr = match val {
+        Value::Array(arr) => arr,
+        _ => return None,
+    };
 
-                    for (key, val) in obj {
-                        match key.as_str() {
-                            "jwt_audience" => {
-                                jwt_audience = extract_string(val);
-                            }
-                            "jwt_extra_audiences" => {
-                                jwt_extra_audiences = extract_string_array(val);
-                            }
-                            "jwt_svid_file_name" => {
-                                jwt_svid_file_name = extract_string(val);
-                            }
-                            _ => {}
-                        }
-                    }
+    let jwt_svids: Vec<JwtSvid> = arr.iter().filter_map(parse_jwt_svid).collect();
 
-                    if let (Some(audience), Some(file_name)) = (jwt_audience, jwt_svid_file_name) {
-                        jwt_svids.push(JwtSvid {
-                            jwt_audience: audience,
-                            jwt_extra_audiences,
-                            jwt_svid_file_name: file_name,
-                        });
-                    }
-                }
+    if jwt_svids.is_empty() {
+        None
+    } else {
+        Some(jwt_svids)
+    }
+}
+
+fn parse_jwt_svid(value: &Value) -> Option<JwtSvid> {
+    let obj = match value {
+        Value::Object(obj) => obj,
+        _ => return None,
+    };
+
+    let mut jwt_audience = None;
+    let mut jwt_extra_audiences = None;
+    let mut jwt_svid_file_name = None;
+
+    for (key, val) in obj {
+        match key.as_str() {
+            "jwt_audience" => {
+                jwt_audience = extract_string(val);
             }
-            if jwt_svids.is_empty() {
-                None
-            } else {
-                Some(jwt_svids)
+            "jwt_extra_audiences" => {
+                jwt_extra_audiences = extract_string_array(val);
             }
+            "jwt_svid_file_name" => {
+                jwt_svid_file_name = extract_string(val);
+            }
+            _ => {}
         }
+    }
+
+    match (jwt_audience, jwt_svid_file_name) {
+        (Some(jwt_audience), Some(jwt_svid_file_name)) => Some(JwtSvid {
+            jwt_audience,
+            jwt_extra_audiences,
+            jwt_svid_file_name,
+        }),
         _ => None,
     }
 }
