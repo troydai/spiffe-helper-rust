@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: httpbin
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin
+  namespace: httpbin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: httpbin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+    spec:
+      serviceAccountName: httpbin
+      containers:
+      - name: httpbin
+        image: kennethreitz/httpbin:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  namespace: httpbin
+spec:
+  selector:
+    app: httpbin
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  type: ClusterIP

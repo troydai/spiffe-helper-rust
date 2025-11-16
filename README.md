@@ -169,7 +169,6 @@ This target:
   - Kubernetes node attestation (k8s_psat plugin)
   - Workload API socket at `/run/spire/sockets/workload_api.sock`
   - Proper RBAC (ClusterRole and ClusterRoleBinding) for node attestation
-  - Host network mode for socket access
 - Waits for all agent pods to be ready before returning
 
 The deployment is **idempotent**: safe to run multiple times.
