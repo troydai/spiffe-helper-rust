@@ -323,7 +323,10 @@ fn main() -> Result<()> {
             "true" => Some(true),
             "false" => Some(false),
             _ => {
-                anyhow::bail!("Invalid value for -daemon-mode: {}. Must be 'true' or 'false'", dm_str);
+                anyhow::bail!(
+                    "Invalid value for -daemon-mode: {}. Must be 'true' or 'false'",
+                    dm_str
+                );
             }
         }
     } else {
