@@ -63,8 +63,6 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_greeting_logic() {
         // Mock test to ensure coverage data is generated
@@ -83,7 +81,6 @@ mod tests {
         // Additional test to generate coverage data
         let count: u8 = 3;
         assert!(count > 0);
-        // u8 max value is 255, so this assertion is always true but helps with coverage
-        let _ = count;
+        assert_eq!(count, 3);
     }
 }
