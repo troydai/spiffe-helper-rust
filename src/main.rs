@@ -1,11 +1,20 @@
 mod config;
 
 use anyhow::{Context, Result};
+use axum::{
+    http::StatusCode,
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::{interval, Duration};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_CONFIG_FILE: &str = "helper.conf";
+const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum DaemonModeFlag {
@@ -31,7 +40,8 @@ struct Args {
     version: bool,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Handle version flag
@@ -56,9 +66,90 @@ fn main() -> Result<()> {
         config.daemon_mode = Some(override_value);
     }
 
-    // TODO: Implement actual functionality
-    // For now, return unimplemented error
-    anyhow::bail!("unimplemented")
+    // Check if daemon mode is enabled
+    let daemon_mode = config.daemon_mode.unwrap_or(false);
+    if !daemon_mode {
+        // Non-daemon mode - return unimplemented for now
+        anyhow::bail!("non-daemon mode not yet implemented")
+    }
+
+    // Run daemon mode
+    run_daemon(config).await
+}
+
+async fn run_daemon(config: config::Config) -> Result<()> {
+    println!("Starting spiffe-helper-rust daemon...");
+
+    // Start health check server if enabled
+    let health_checks = config.health_checks.clone();
+    let health_server_handle = if let Some(ref health_checks) = health_checks {
+        if health_checks.listener_enabled {
+            let bind_addr = format!("0.0.0.0:{}", health_checks.bind_port);
+            let liveness_path = health_checks.liveness_path.clone().unwrap_or_else(|| "/health/live".to_string());
+            let readiness_path = health_checks.readiness_path.clone().unwrap_or_else(|| "/health/ready".to_string());
+
+            println!("Starting health check server on {}", bind_addr);
+            println!("  Liveness path: {}", liveness_path);
+            println!("  Readiness path: {}", readiness_path);
+
+            let app = Router::new()
+                .route(&liveness_path, get(liveness_handler))
+                .route(&readiness_path, get(readiness_handler));
+
+            let listener = tokio::net::TcpListener::bind(&bind_addr).await
+                .with_context(|| format!("Failed to bind to {}", bind_addr))?;
+
+            Some(tokio::spawn(async move {
+                axum::serve(listener, app)
+                    .await
+                    .expect("Health check server failed");
+            }))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Set up signal handling for graceful shutdown
+    let mut sigterm = signal(SignalKind::terminate())
+        .context("Failed to register SIGTERM handler")?;
+
+    // Set up periodic liveness logging
+    let mut liveness_interval = interval(Duration::from_secs(DEFAULT_LIVENESS_LOG_INTERVAL_SECS));
+    liveness_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    println!("Daemon running. Waiting for SIGTERM to shutdown...");
+
+    // Main daemon loop
+    loop {
+        tokio::select! {
+            _ = sigterm.recv() => {
+                println!("Received SIGTERM, shutting down gracefully...");
+                break;
+            }
+            _ = liveness_interval.tick() => {
+                println!("spiffe-helper-rust daemon is alive");
+            }
+        }
+    }
+
+    // Shutdown health check server if it was started
+    if let Some(handle) = health_server_handle {
+        handle.abort();
+        println!("Health check server stopped");
+    }
+
+    println!("Daemon shutdown complete");
+    Ok(())
+}
+
+async fn liveness_handler() -> impl IntoResponse {
+    StatusCode::OK
+}
+
+async fn readiness_handler() -> impl IntoResponse {
+    StatusCode::OK
 }
 
 #[cfg(test)]
