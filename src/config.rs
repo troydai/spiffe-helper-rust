@@ -1,4 +1,4 @@
-use anyhow::{Context, Ok, Result, anyhow};
+use anyhow::{anyhow, Context, Ok, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -238,7 +238,7 @@ fn extract_string_array(val: &hcl::Value) -> anyhow::Result<Option<Vec<String>>>
 }
 
 /// extract the health check configuration
-/// 
+///
 /// The default port is 8080.
 fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks>> {
     if let Some(map) = val.as_object() {
@@ -255,7 +255,7 @@ fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks
 
         // short circuit when health check is not enabled
         if !retval.listener_enabled {
-            return Ok(Some(retval))
+            return Ok(Some(retval));
         }
 
         if let Some(v) = map.get("bind_port") {
@@ -270,7 +270,7 @@ fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks
             retval.readiness_path = extract_string(v)?;
         }
 
-        return Ok(Some(retval))
+        return Ok(Some(retval));
     }
 
     Err(anyhow!("given HCL value is not a block for health check"))
@@ -805,7 +805,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let health_checks = result.unwrap().unwrap();
-        assert_eq!(health_checks.listener_enabled, false);
+        assert!(!health_checks.listener_enabled);
         assert_eq!(health_checks.bind_port, 8080); // default
         assert_eq!(health_checks.liveness_path, None);
         assert_eq!(health_checks.readiness_path, None);
@@ -828,10 +828,16 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let health_checks = result.unwrap().unwrap();
-        assert_eq!(health_checks.listener_enabled, true);
+        assert!(health_checks.listener_enabled);
         assert_eq!(health_checks.bind_port, 9090);
-        assert_eq!(health_checks.liveness_path, Some("/health/live".to_string()));
-        assert_eq!(health_checks.readiness_path, Some("/health/ready".to_string()));
+        assert_eq!(
+            health_checks.liveness_path,
+            Some("/health/live".to_string())
+        );
+        assert_eq!(
+            health_checks.readiness_path,
+            Some("/health/ready".to_string())
+        );
     }
 
     #[test]
@@ -849,7 +855,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let health_checks = result.unwrap().unwrap();
-        assert_eq!(health_checks.listener_enabled, true);
+        assert!(health_checks.listener_enabled);
         assert_eq!(health_checks.bind_port, 3000);
         assert_eq!(health_checks.liveness_path, None);
         assert_eq!(health_checks.readiness_path, None);
@@ -868,7 +874,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let health_checks = result.unwrap().unwrap();
-        assert_eq!(health_checks.listener_enabled, false);
+        assert!(!health_checks.listener_enabled);
         assert_eq!(health_checks.bind_port, 8080);
         assert_eq!(health_checks.liveness_path, None);
         assert_eq!(health_checks.readiness_path, None);
@@ -935,7 +941,10 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let config = result.unwrap();
-        assert_eq!(config.agent_address, Some("unix:///tmp/agent.sock".to_string()));
+        assert_eq!(
+            config.agent_address,
+            Some("unix:///tmp/agent.sock".to_string())
+        );
         assert_eq!(config.cmd, Some("/usr/bin/myapp".to_string()));
         assert_eq!(config.cmd_args, Some("--flag value".to_string()));
         assert_eq!(config.daemon_mode, Some(true));
@@ -975,7 +984,10 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let config = result.unwrap();
-        assert_eq!(config.agent_address, Some("unix:///tmp/agent.sock".to_string()));
+        assert_eq!(
+            config.agent_address,
+            Some("unix:///tmp/agent.sock".to_string())
+        );
     }
 
     #[test]
