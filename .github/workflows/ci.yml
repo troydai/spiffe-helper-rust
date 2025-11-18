@@ -99,6 +99,10 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -125,35 +129,44 @@ jobs:
       - name: Extract coverage metrics
         id: extract
         run: |
-          # Parse the summary output from cargo-llvm-cov
-          # Example format: "Total: 85.23% (1234/1448 lines, 89/95 functions)"
+          # Parse the table format output from cargo-llvm-cov
+          # Format: TOTAL line contains: Regions Missed Cover% Functions Missed Executed% Lines Missed Cover%
           if [ -f coverage_summary.txt ]; then
-            # Extract overall coverage percentage - look for "Total: XX.XX%"
-            COVERAGE=$(grep -oE 'Total:[[:space:]]+[0-9]+\.[0-9]+%' coverage_summary.txt | grep -oE '[0-9]+\.[0-9]+' | head -1 || echo "0")
+            # Extract the TOTAL line
+            TOTAL_LINE=$(grep "^TOTAL" coverage_summary.txt || echo "")
             
-            # Extract lines: "1234/1448 lines"
-            LINES_LINE=$(grep -oE '[0-9]+/[0-9]+[[:space:]]+lines' coverage_summary.txt | head -1 || echo "0/0")
-            LINES_COVERED=$(echo "$LINES_LINE" | cut -d'/' -f1)
-            LINES_TOTAL=$(echo "$LINES_LINE" | cut -d'/' -f2 | cut -d' ' -f1)
-            
-            # Extract functions: "89/95 functions"
-            FUNCTIONS_LINE=$(grep -oE '[0-9]+/[0-9]+[[:space:]]+functions' coverage_summary.txt | head -1 || echo "0/0")
-            FUNCTIONS_COVERED=$(echo "$FUNCTIONS_LINE" | cut -d'/' -f1)
-            FUNCTIONS_TOTAL=$(echo "$FUNCTIONS_LINE" | cut -d'/' -f2 | cut -d' ' -f1)
-            
-            # Fallback: if COVERAGE is empty, calculate from lines
-            if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "0" ]; then
-              if [ "$LINES_TOTAL" != "0" ] && [ -n "$LINES_TOTAL" ]; then
-                COVERAGE=$(echo "scale=2; $LINES_COVERED * 100 / $LINES_TOTAL" | bc 2>/dev/null || echo "0")
-              fi
+            if [ -n "$TOTAL_LINE" ]; then
+              # Parse the TOTAL line - it's space-separated columns
+              # Columns: TOTAL, Regions, Missed Regions, Cover%, Functions, Missed Functions, Executed%, Lines, Missed Lines, Cover%, Branches, Missed Branches, Cover%
+              # We want: Overall coverage (Regions Cover%), Lines total/covered, Functions total/covered
+              
+              # Extract overall coverage percentage (Regions Cover column - 4th field)
+              COVERAGE=$(echo "$TOTAL_LINE" | awk '{print $4}' | sed 's/%//' || echo "0")
+              
+              # Extract lines: total (8th field) and missed (9th field)
+              LINES_TOTAL=$(echo "$TOTAL_LINE" | awk '{print $8}' || echo "0")
+              LINES_MISSED=$(echo "$TOTAL_LINE" | awk '{print $9}' || echo "0")
+              LINES_COVERED=$((LINES_TOTAL - LINES_MISSED))
+              
+              # Extract functions: total (5th field) and missed (6th field)
+              FUNCTIONS_TOTAL=$(echo "$TOTAL_LINE" | awk '{print $5}' || echo "0")
+              FUNCTIONS_MISSED=$(echo "$TOTAL_LINE" | awk '{print $6}' || echo "0")
+              FUNCTIONS_COVERED=$((FUNCTIONS_TOTAL - FUNCTIONS_MISSED))
+              
+              # Set defaults if empty or invalid
+              COVERAGE=${COVERAGE:-0}
+              LINES_COVERED=${LINES_COVERED:-0}
+              LINES_TOTAL=${LINES_TOTAL:-0}
+              FUNCTIONS_COVERED=${FUNCTIONS_COVERED:-0}
+              FUNCTIONS_TOTAL=${FUNCTIONS_TOTAL:-0}
+            else
+              echo "Warning: Could not find TOTAL line in coverage output"
+              COVERAGE=0
+              LINES_COVERED=0
+              LINES_TOTAL=0
+              FUNCTIONS_COVERED=0
+              FUNCTIONS_TOTAL=0
             fi
-            
-            # Set defaults if empty
-            COVERAGE=${COVERAGE:-0}
-            LINES_COVERED=${LINES_COVERED:-0}
-            LINES_TOTAL=${LINES_TOTAL:-0}
-            FUNCTIONS_COVERED=${FUNCTIONS_COVERED:-0}
-            FUNCTIONS_TOTAL=${FUNCTIONS_TOTAL:-0}
             
             echo "Extracted values:"
             echo "  Coverage: $COVERAGE%"
