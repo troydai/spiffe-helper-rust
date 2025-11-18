@@ -1,28 +1,62 @@
-use anyhow::Result;
-use clap::Parser;
+mod config;
 
-/// A CLI application
+use anyhow::{Context, Result};
+use clap::{Parser, ValueEnum};
+use std::path::PathBuf;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const DEFAULT_CONFIG_FILE: &str = "helper.conf";
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum DaemonModeFlag {
+    True,
+    False,
+}
+
+/// SPIFFE Helper - A utility for fetching X.509 SVID certificates from the SPIFFE Workload API
 #[derive(Parser, Debug)]
 #[command(name = "spiffe-helper-rust")]
-#[command(about = "A CLI application", long_about = None)]
+#[command(about = "SPIFFE Helper - Fetch and manage X.509 SVID certificates", long_about = None)]
 struct Args {
-    /// Optional name to greet
-    #[arg(short, long)]
-    name: Option<String>,
+    /// Path to the configuration file
+    #[arg(short, long, default_value = DEFAULT_CONFIG_FILE)]
+    config: String,
 
-    /// Number of times to greet
-    #[arg(short, long, default_value_t = 1)]
-    count: u8,
+    /// Boolean true or false. Overrides daemon_mode in the config file.
+    #[arg(long, value_enum)]
+    daemon_mode: Option<DaemonModeFlag>,
+
+    /// Print version number
+    #[arg(short = 'v', long)]
+    version: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let name = args.name.as_deref().unwrap_or("World");
-
-    for _ in 0..args.count {
-        println!("Hello, {}!", name);
+    // Handle version flag
+    if args.version {
+        println!("{}", VERSION);
+        return Ok(());
     }
 
-    Ok(())
+    // Parse daemon_mode override
+    let daemon_mode_override = args.daemon_mode.map(|flag| match flag {
+        DaemonModeFlag::True => true,
+        DaemonModeFlag::False => false,
+    });
+
+    // Parse config file
+    let config_path = PathBuf::from(&args.config);
+    let mut config = config::parse_hcl_config(config_path.as_path())
+        .with_context(|| format!("Failed to parse config file: {}", args.config))?;
+
+    // Override daemon_mode if provided via CLI
+    if let Some(override_value) = daemon_mode_override {
+        config.daemon_mode = Some(override_value);
+    }
+
+    // TODO: Implement actual functionality
+    // For now, return unimplemented error
+    anyhow::bail!("unimplemented")
 }
