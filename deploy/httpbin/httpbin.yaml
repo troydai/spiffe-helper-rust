@@ -17,15 +17,8 @@ metadata:
 data:
   helper.conf: |
     agent_address = "unix:///run/spire/sockets/workload_api.sock"
-    daemon_mode = true
+    daemon_mode = false
     cert_dir = "/tmp/certs"
-
-    health_checks {
-        listener_enabled = true
-        bind_port = 8080
-        liveness_path = "/health/live"
-        readiness_path = "/health/ready"
-    }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -43,6 +36,21 @@ spec:
         app: httpbin
     spec:
       serviceAccountName: httpbin
+      initContainers:
+      - name: spiffe-helper
+        image: spiffe-helper-rust:test
+        imagePullPolicy: Never
+        args:
+        - --config
+        - /etc/spiffe-helper/helper.conf
+        volumeMounts:
+        - name: spiffe-socket
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: config
+          mountPath: /etc/spiffe-helper
+        - name: certs
+          mountPath: /tmp/certs
       containers:
       - name: httpbin
         image: kennethreitz/httpbin:latest
@@ -61,35 +69,6 @@ spec:
         - name: certs
           mountPath: /tmp/certs
           readOnly: true
-      - name: spiffe-helper
-        image: spiffe-helper-rust:test
-        imagePullPolicy: Never
-        args:
-        - --config
-        - /etc/spiffe-helper/helper.conf
-        ports:
-        - containerPort: 8080
-          name: health
-        volumeMounts:
-        - name: spiffe-socket
-          mountPath: /run/spire/sockets
-          readOnly: true
-        - name: config
-          mountPath: /etc/spiffe-helper
-        - name: certs
-          mountPath: /tmp/certs
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 8080
-          initialDelaySeconds: 2
-          periodSeconds: 5
       volumes:
       - name: spiffe-socket
         hostPath:
@@ -114,8 +93,4 @@ spec:
     targetPort: 80
     protocol: TCP
     name: http
-  - port: 8080
-    targetPort: 8080
-    protocol: TCP
-    name: health
   type: ClusterIP

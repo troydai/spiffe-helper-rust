@@ -64,12 +64,29 @@ async fn main() -> Result<()> {
     // Check if daemon mode is enabled
     let daemon_mode = config.daemon_mode.unwrap_or(false);
     if !daemon_mode {
-        // Non-daemon mode - return unimplemented for now
-        anyhow::bail!("non-daemon mode not yet implemented")
+        // Non-daemon mode - fetch certificates once and exit
+        run_once(config).await
+    } else {
+        // Run daemon mode
+        run_daemon(config).await
+    }
+}
+
+async fn run_once(config: config::Config) -> Result<()> {
+    println!("Running spiffe-helper-rust in one-shot mode...");
+
+    // Ensure cert directory exists
+    if let Some(ref cert_dir) = config.cert_dir {
+        std::fs::create_dir_all(cert_dir)
+            .with_context(|| format!("Failed to create cert directory: {}", cert_dir))?;
+        println!("Cert directory ready: {}", cert_dir);
     }
 
-    // Run daemon mode
-    run_daemon(config).await
+    // TODO: Implement actual certificate fetching from SPIRE Workload API
+    // For now, this is a placeholder that exits successfully
+    // The actual implementation will fetch X.509 SVIDs and JWT tokens from the SPIRE agent
+    println!("One-shot mode complete (certificate fetching not yet implemented)");
+    Ok(())
 }
 
 async fn run_daemon(config: config::Config) -> Result<()> {
