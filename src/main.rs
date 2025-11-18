@@ -1,12 +1,7 @@
 mod config;
 
 use anyhow::{Context, Result};
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 use tokio::signal::unix::{signal, SignalKind};
@@ -85,8 +80,14 @@ async fn run_daemon(config: config::Config) -> Result<()> {
     let health_server_handle = if let Some(ref health_checks) = health_checks {
         if health_checks.listener_enabled {
             let bind_addr = format!("0.0.0.0:{}", health_checks.bind_port);
-            let liveness_path = health_checks.liveness_path.clone().unwrap_or_else(|| "/health/live".to_string());
-            let readiness_path = health_checks.readiness_path.clone().unwrap_or_else(|| "/health/ready".to_string());
+            let liveness_path = health_checks
+                .liveness_path
+                .clone()
+                .unwrap_or_else(|| "/health/live".to_string());
+            let readiness_path = health_checks
+                .readiness_path
+                .clone()
+                .unwrap_or_else(|| "/health/ready".to_string());
 
             println!("Starting health check server on {}", bind_addr);
             println!("  Liveness path: {}", liveness_path);
@@ -96,7 +97,8 @@ async fn run_daemon(config: config::Config) -> Result<()> {
                 .route(&liveness_path, get(liveness_handler))
                 .route(&readiness_path, get(readiness_handler));
 
-            let listener = tokio::net::TcpListener::bind(&bind_addr).await
+            let listener = tokio::net::TcpListener::bind(&bind_addr)
+                .await
                 .with_context(|| format!("Failed to bind to {}", bind_addr))?;
 
             Some(tokio::spawn(async move {
@@ -112,8 +114,8 @@ async fn run_daemon(config: config::Config) -> Result<()> {
     };
 
     // Set up signal handling for graceful shutdown
-    let mut sigterm = signal(SignalKind::terminate())
-        .context("Failed to register SIGTERM handler")?;
+    let mut sigterm =
+        signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?;
 
     // Set up periodic liveness logging
     let mut liveness_interval = interval(Duration::from_secs(DEFAULT_LIVENESS_LOG_INTERVAL_SECS));
