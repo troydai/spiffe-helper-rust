@@ -8,22 +8,38 @@ spiffe-helper fetches SPIFFE X.509 certificates and JWT tokens from the SPIRE ag
 
 spiffe-helper-rust uses an HCL configuration file (default: `helper.conf`) to configure its behavior.
 
-### Daemon Mode
+### Operation Modes
 
-When `daemon_mode` is set to `true`, the program runs continuously until it receives a SIGTERM signal. In daemon mode:
+spiffe-helper-rust supports two operation modes controlled by the `daemon_mode` configuration option:
+
+#### Daemon Mode (`daemon_mode = true`)
+
+When `daemon_mode` is set to `true`, the program runs continuously until it receives a SIGTERM signal. This mode is suitable for sidecar containers that need to run alongside the main application:
 
 - The program keeps running until SIGTERM is received
 - Periodic liveness logs are printed every 30 seconds to demonstrate the daemon is running
 - Health check endpoints can be enabled for Kubernetes probes
 - The program shuts down gracefully when SIGTERM is received
 
-#### Enabling Daemon Mode
+**Use case**: Sidecar containers that need to continuously fetch and update certificates.
 
-Daemon mode can be enabled in two ways:
+#### One-Shot Mode (`daemon_mode = false`)
+
+When `daemon_mode` is set to `false`, the program fetches certificates once and exits. This mode is suitable for initContainers:
+
+- Fetches certificates once and exits successfully
+- Creates the certificate directory if needed
+- Main container starts after initContainer completes
+
+**Use case**: InitContainers that fetch certificates before the main container starts.
+
+#### Configuration
+
+The mode can be set in two ways:
 
 1. **Via configuration file:**
    ```hcl
-   daemon_mode = true
+   daemon_mode = true   # or false for one-shot mode
    ```
 
 2. **Via command-line flag:**
