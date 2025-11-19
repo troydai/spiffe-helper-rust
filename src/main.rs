@@ -61,8 +61,8 @@ async fn main() -> Result<()> {
         config.daemon_mode = Some(override_value);
     }
 
-    // Check if daemon mode is enabled
-    let daemon_mode = config.daemon_mode.unwrap_or(false);
+    // Check if daemon mode is enabled (defaults to true)
+    let daemon_mode = config.daemon_mode.unwrap_or(true);
     if !daemon_mode {
         // Non-daemon mode - fetch certificates once and exit
         run_once(config).await
