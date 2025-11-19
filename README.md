@@ -16,6 +16,7 @@ spiffe-helper-rust supports two operation modes controlled by the `daemon_mode` 
 
 When `daemon_mode` is set to `true` (or not specified), the program runs continuously until it receives a SIGTERM signal. This mode is suitable for sidecar containers that need to run alongside the main application:
 
+- **X.509 Certificate Fetching**: On startup, the daemon connects to the SPIRE agent and fetches the X.509 SVID (certificate and private key). The certificates are written to the configured output directory before the daemon continues. If certificate fetching fails, the daemon exits with code 1.
 - The program keeps running until SIGTERM is received
 - Periodic liveness logs are printed every 30 seconds to demonstrate the daemon is running
 - Health check endpoints can be enabled for Kubernetes probes
@@ -135,12 +136,35 @@ spiffe-helper-rust --config helper.conf --daemon-mode false
 kill -TERM <pid>
 ```
 
+### X.509 Certificate Fetching
+
+In daemon mode, spiffe-helper-rust automatically fetches X.509 SVIDs (certificates and private keys) from the SPIRE agent at startup. The certificates are persisted to the configured output directory.
+
+#### Configuration
+
+The following configuration options control X.509 certificate fetching:
+
+- `agent_address` (string, required for daemon mode): Address of the SPIRE agent Workload API (e.g., `"unix:///tmp/agent.sock"` or `"unix:///run/spire/sockets/workload_api.sock"`)
+- `cert_dir` (string, required for daemon mode): Directory where certificates will be written
+- `svid_file_name` (string, optional): Filename for the X.509 certificate (default: `"svid.pem"`)
+- `svid_key_file_name` (string, optional): Filename for the X.509 private key (default: `"svid_key.pem"`)
+
+#### Behavior
+
+- **Startup**: When daemon mode starts, it immediately attempts to fetch the X.509 certificate and key from the SPIRE agent
+- **Success**: If fetching succeeds, certificates are written to the configured directory and the daemon continues running
+- **Failure**: If fetching fails (e.g., agent unavailable, connection error), the daemon exits with code 1, ensuring initContainers fail if certificates cannot be obtained
+
+This ensures that certificates are available before the main application container starts, making it suitable for use in Kubernetes initContainers.
+
 ### Example Configuration File
 
 ```hcl
 agent_address = "unix:///tmp/agent.sock"
 # daemon_mode = true  # Optional: daemon mode is the default
 cert_dir = "/etc/certs"
+svid_file_name = "svid.pem"
+svid_key_file_name = "svid_key.pem"
 
 health_checks {
     listener_enabled = true

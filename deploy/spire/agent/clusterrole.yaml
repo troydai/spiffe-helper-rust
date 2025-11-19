@@ -19,4 +19,8 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list", "watch"]
+  # Required for kubelet API access via Kubernetes API server proxy
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get", "create"]
 
