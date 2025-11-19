@@ -9,6 +9,17 @@ metadata:
   name: httpbin
   namespace: httpbin
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spiffe-helper-config
+  namespace: httpbin
+data:
+  helper.conf: |
+    agent_address = "unix:///run/spire/sockets/workload_api.sock"
+    daemon_mode = false
+    cert_dir = "/tmp/certs"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,6 +36,21 @@ spec:
         app: httpbin
     spec:
       serviceAccountName: httpbin
+      initContainers:
+      - name: spiffe-helper
+        image: spiffe-helper-rust:test
+        imagePullPolicy: Never
+        args:
+        - --config
+        - /etc/spiffe-helper/helper.conf
+        volumeMounts:
+        - name: spiffe-socket
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: config
+          mountPath: /etc/spiffe-helper
+        - name: certs
+          mountPath: /tmp/certs
       containers:
       - name: httpbin
         image: kennethreitz/httpbin:latest
@@ -39,6 +65,20 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
+        volumeMounts:
+        - name: certs
+          mountPath: /tmp/certs
+          readOnly: true
+      volumes:
+      - name: spiffe-socket
+        hostPath:
+          path: /run/spire/sockets
+          type: DirectoryOrCreate
+      - name: config
+        configMap:
+          name: spiffe-helper-config
+      - name: certs
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
