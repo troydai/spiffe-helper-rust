@@ -11,8 +11,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARY="$ROOT_DIR/target/release/spiffe-helper-rust"
-CONFIG_FILE="$ROOT_DIR/deploy/test-daemon/helper.conf"
 TEST_DIR=$(mktemp -d)
+CONFIG_FILE="$TEST_DIR/helper.conf"
 
 # Colors
 RED='\033[0;31m'
@@ -40,11 +40,19 @@ if [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
-# Check if config exists
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "${RED}Error: Config file not found at $CONFIG_FILE${NC}"
-    exit 1
-fi
+# Create test config file
+cat > "$CONFIG_FILE" <<EOF
+agent_address = "unix:///tmp/test-agent.sock"
+daemon_mode = true
+cert_dir = "$TEST_DIR/certs"
+
+health_checks {
+    listener_enabled = true
+    bind_port = 8080
+    liveness_path = "/health/live"
+    readiness_path = "/health/ready"
+}
+EOF
 
 echo -e "${GREEN}[1/4] Starting daemon...${NC}"
 cd "$TEST_DIR"
