@@ -1,18 +1,17 @@
 #!/bin/bash
 set -e
 
-# Test script for daemon mode functionality
-# This script tests:
-# 1. Daemon starts correctly
-# 2. Health check endpoints work
-# 3. Periodic logging works
-# 4. SIGTERM handling works
+# Test script for spiffe-helper functionality
+# This script tests initContainer behavior through httpbin pods:
+# 1. InitContainer starts and completes successfully
+# 2. Main container starts after initContainer
+# 3. Pod lifecycle (delete/recreate) works correctly
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY="$ROOT_DIR/target/release/spiffe-helper-rust"
-TEST_DIR=$(mktemp -d)
-CONFIG_FILE="$TEST_DIR/helper.conf"
+KUBECONFIG_PATH="${KUBECONFIG:-$ROOT_DIR/artifacts/kubeconfig}"
+NAMESPACE="httpbin"
+APP_LABEL="app=httpbin"
 
 # Colors
 RED='\033[0;31m'
@@ -20,112 +19,145 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-cleanup() {
-    echo -e "${YELLOW}Cleaning up...${NC}"
-    if [ -n "$DAEMON_PID" ]; then
-        kill -TERM "$DAEMON_PID" 2>/dev/null || true
-        wait "$DAEMON_PID" 2>/dev/null || true
-    fi
-    rm -rf "$TEST_DIR"
-}
-
-trap cleanup EXIT
-
-echo -e "${GREEN}=== Testing Daemon Mode ===${NC}"
-
-# Check if binary exists
-if [ ! -f "$BINARY" ]; then
-    echo -e "${RED}Error: Binary not found at $BINARY${NC}"
-    echo "Please run 'cargo build --release' first"
+# Check if kubectl is available
+if ! command -v kubectl &> /dev/null; then
+    echo -e "${RED}Error: kubectl not found${NC}"
     exit 1
 fi
 
-# Create test config file
-cat > "$CONFIG_FILE" <<EOF
-agent_address = "unix:///tmp/test-agent.sock"
-daemon_mode = true
-cert_dir = "$TEST_DIR/certs"
-
-health_checks {
-    listener_enabled = true
-    bind_port = 8080
-    liveness_path = "/health/live"
-    readiness_path = "/health/ready"
-}
-EOF
-
-echo -e "${GREEN}[1/4] Starting daemon...${NC}"
-cd "$TEST_DIR"
-"$BINARY" --config "$CONFIG_FILE" > daemon.log 2>&1 &
-DAEMON_PID=$!
-
-# Wait for daemon to start
-sleep 2
-
-# Check if daemon is running
-if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
-    echo -e "${RED}Error: Daemon failed to start${NC}"
-    cat daemon.log
+# Check if kubeconfig exists
+if [ ! -f "$KUBECONFIG_PATH" ]; then
+    echo -e "${RED}Error: Kubeconfig not found at $KUBECONFIG_PATH${NC}"
+    echo "Please ensure the cluster is set up (make env-up)"
     exit 1
 fi
 
-echo -e "${GREEN}[2/4] Testing health check endpoints...${NC}"
-sleep 1
+export KUBECONFIG="$KUBECONFIG_PATH"
 
-# Test liveness endpoint
-LIVENESS_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/live || echo "000")
-if [ "$LIVENESS_CODE" != "200" ]; then
-    echo -e "${RED}Error: Liveness endpoint returned $LIVENESS_CODE, expected 200${NC}"
-    cat daemon.log
+echo -e "${GREEN}=== Testing spiffe-helper initContainer via httpbin ===${NC}"
+echo ""
+
+# Check if httpbin namespace exists
+if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
+    echo -e "${RED}Error: Namespace $NAMESPACE not found${NC}"
+    echo "Please deploy httpbin first: kubectl apply -f deploy/httpbin/httpbin.yaml"
     exit 1
 fi
-echo -e "${GREEN}  ✓ Liveness endpoint: HTTP $LIVENESS_CODE${NC}"
 
-# Test readiness endpoint
-READINESS_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/ready || echo "000")
-if [ "$READINESS_CODE" != "200" ]; then
-    echo -e "${RED}Error: Readiness endpoint returned $READINESS_CODE, expected 200${NC}"
-    cat daemon.log
+# Check if httpbin pods exist
+if ! kubectl get pods -n "$NAMESPACE" -l "$APP_LABEL" &> /dev/null; then
+    echo -e "${RED}Error: No httpbin pods found${NC}"
+    echo "Please deploy httpbin first: kubectl apply -f deploy/httpbin/httpbin.yaml"
     exit 1
 fi
-echo -e "${GREEN}  ✓ Readiness endpoint: HTTP $READINESS_CODE${NC}"
 
-echo -e "${GREEN}[3/4] Testing periodic logging...${NC}"
-# Wait for at least one log message
-sleep 35
-
-if ! grep -q "spiffe-helper-rust daemon is alive" daemon.log; then
-    echo -e "${RED}Error: Periodic log message not found${NC}"
-    cat daemon.log
+echo -e "${GREEN}[1/3] Checking initial pod status...${NC}"
+INITIAL_POD=$(kubectl get pods -n "$NAMESPACE" -l "$APP_LABEL" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [ -z "$INITIAL_POD" ]; then
+    echo -e "${RED}Error: Could not find httpbin pod${NC}"
     exit 1
 fi
-echo -e "${GREEN}  ✓ Periodic logging working${NC}"
 
-echo -e "${GREEN}[4/4] Testing SIGTERM handling...${NC}"
-# Send SIGTERM
-kill -TERM "$DAEMON_PID"
+echo "  Found pod: $INITIAL_POD"
+INIT_STATUS=$(kubectl get pod -n "$NAMESPACE" "$INITIAL_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || echo "not-found")
+if [ "$INIT_STATUS" = "Completed" ]; then
+    echo -e "${GREEN}  ✓ InitContainer already completed${NC}"
+else
+    echo -e "${YELLOW}  ⚠ InitContainer status: ${INIT_STATUS}${NC}"
+fi
 
-# Wait for graceful shutdown (max 5 seconds)
-for i in {1..5}; do
-    if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+echo ""
+echo -e "${GREEN}[2/3] Testing pod lifecycle (delete and recreate)...${NC}"
+echo "  Deleting pod: $INITIAL_POD"
+kubectl delete pod -n "$NAMESPACE" "$INITIAL_POD" &> /dev/null
+
+# Wait for new pod to be created
+echo "  Waiting for new pod to be created..."
+for i in {1..30}; do
+    NEW_POD=$(kubectl get pods -n "$NAMESPACE" -l "$APP_LABEL" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [ -n "$NEW_POD" ] && [ "$NEW_POD" != "$INITIAL_POD" ]; then
+        echo "  New pod created: $NEW_POD"
         break
     fi
     sleep 1
 done
 
-# Check if process terminated
-if kill -0 "$DAEMON_PID" 2>/dev/null; then
-    echo -e "${RED}Error: Process did not terminate after SIGTERM${NC}"
-    kill -9 "$DAEMON_PID" 2>/dev/null || true
+if [ -z "$NEW_POD" ] || [ "$NEW_POD" = "$INITIAL_POD" ]; then
+    echo -e "${RED}Error: New pod not created within 30 seconds${NC}"
     exit 1
 fi
 
-# Check logs for shutdown message
-if grep -q "Received SIGTERM" daemon.log && grep -q "Daemon shutdown complete" daemon.log; then
-    echo -e "${GREEN}  ✓ Graceful shutdown successful${NC}"
-else
-    echo -e "${YELLOW}  ⚠ Shutdown message not found in logs (may be normal)${NC}"
-    cat daemon.log
+# Wait for initContainer to complete
+echo "  Waiting for initContainer to complete..."
+for i in {1..30}; do
+    INIT_STATUS=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || echo "running")
+    POD_STATUS=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    
+    if [ "$INIT_STATUS" = "Completed" ]; then
+        echo -e "${GREEN}  ✓ InitContainer completed${NC}"
+        break
+    fi
+    
+    if [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Error" ]; then
+        echo -e "${RED}Error: Pod failed with status: $POD_STATUS${NC}"
+        kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | tail -20
+        exit 1
+    fi
+    
+    sleep 1
+done
+
+if [ "$INIT_STATUS" != "Completed" ]; then
+    echo -e "${RED}Error: InitContainer did not complete within 30 seconds${NC}"
+    kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | grep -A 10 "Init Containers"
+    exit 1
 fi
 
+# Check initContainer exit code
+EXIT_CODE=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "unknown")
+if [ "$EXIT_CODE" != "0" ]; then
+    echo -e "${RED}Error: InitContainer exited with code $EXIT_CODE${NC}"
+    kubectl logs -n "$NAMESPACE" "$NEW_POD" -c spiffe-helper
+    exit 1
+fi
+echo -e "${GREEN}  ✓ InitContainer exited successfully (code: $EXIT_CODE)${NC}"
+
+echo ""
+echo -e "${GREEN}[3/3] Verifying main container started...${NC}"
+# Wait for main container to be ready
+for i in {1..30}; do
+    MAIN_READY=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+    POD_STATUS=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    
+    if [ "$MAIN_READY" = "true" ] && [ "$POD_STATUS" = "Running" ]; then
+        echo -e "${GREEN}  ✓ Main container is running and ready${NC}"
+        break
+    fi
+    
+    if [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Error" ]; then
+        echo -e "${RED}Error: Pod failed with status: $POD_STATUS${NC}"
+        kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | tail -20
+        exit 1
+    fi
+    
+    sleep 1
+done
+
+if [ "$MAIN_READY" != "true" ]; then
+    echo -e "${RED}Error: Main container not ready within 30 seconds${NC}"
+    kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | grep -A 10 "Containers"
+    exit 1
+fi
+
+# Check initContainer logs
+echo ""
+echo -e "${GREEN}=== InitContainer Logs ===${NC}"
+kubectl logs -n "$NAMESPACE" "$NEW_POD" -c spiffe-helper 2>&1 | head -10
+
+echo ""
 echo -e "${GREEN}=== All Tests Passed! ===${NC}"
+echo ""
+echo "Summary:"
+echo "  - InitContainer completed successfully"
+echo "  - Main container started after initContainer"
+echo "  - Pod lifecycle (delete/recreate) works correctly"
