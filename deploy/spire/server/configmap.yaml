@@ -13,7 +13,7 @@ data:
         bind_port = "8081"
         trust_domain = "spiffe-helper.local"
         data_dir = "/run/spire/data"
-        log_level = "INFO"
+        log_level = "DEBUG"
         log_format = "text"
     }
 

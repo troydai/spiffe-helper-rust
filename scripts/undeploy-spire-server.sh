@@ -12,8 +12,8 @@ export KUBECONFIG="${KUBECONFIG_PATH}"
 
 echo -e "${COLOR_BRIGHT_BLUE}[undeploy]${COLOR_RESET} ${COLOR_BOLD}Removing SPIRE server...${COLOR_RESET}"
 if kubectl get namespace spire-server > /dev/null 2>&1; then
-	echo -e "${COLOR_CYAN}[undeploy]${COLOR_RESET} Deleting StatefulSet..."
-	kubectl delete statefulset spire-server -n spire-server --ignore-not-found=true
+	echo -e "${COLOR_CYAN}[undeploy]${COLOR_RESET} Deleting Deployment..."
+	kubectl delete deployment spire-server -n spire-server --ignore-not-found=true
 	echo -e "${COLOR_CYAN}[undeploy]${COLOR_RESET} Deleting Service..."
 	kubectl delete service spire-server -n spire-server --ignore-not-found=true
 	echo -e "${COLOR_CYAN}[undeploy]${COLOR_RESET} Deleting ConfigMap..."

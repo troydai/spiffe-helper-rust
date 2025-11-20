@@ -93,7 +93,7 @@ This target:
 - Ensures certificates are generated (`make certs`)
 - Creates the `spire-server` namespace
 - Creates Kubernetes Secrets from certificates in `./artifacts/certs/`
-- Deploys the SPIRE server StatefulSet with:
+- Deploys the SPIRE server Deployment with:
   - SQLite datastore
   - Kubernetes node attestation (k8s_psat plugin)
   - Health probes (TCP socket checks on port 8081)

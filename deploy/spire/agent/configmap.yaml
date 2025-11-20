@@ -20,7 +20,6 @@ data:
     plugins {
       NodeAttestor "k8s_psat" {
         plugin_data {
-          # Cluster name for PSAT (Pod Security Admission Token) attestation
           cluster = "spiffe-helper"
         }
       }
@@ -32,6 +31,9 @@ data:
       }
 
       WorkloadAttestor "k8s" {
+        plugin_data {
+          skip_kubelet_verification = true
+        }
       }
     }
 

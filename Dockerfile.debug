@@ -1,0 +1,23 @@
+FROM alpine:3.20
+
+# Install dependencies
+RUN apk add --no-cache \
+    curl \
+    net-tools \
+    iproute2 \
+    bind-tools \
+    vim \
+    jq \
+    openssl \
+    ca-certificates \
+    tar \
+    gzip
+
+# Install SPIRE Agent
+ARG SPIRE_VERSION=1.13.0
+RUN curl -s -L "https://github.com/spiffe/spire/releases/download/v${SPIRE_VERSION}/spire-${SPIRE_VERSION}-linux-arm64-musl.tar.gz" | tar -xz \
+    && find . -name "spire-agent" -type f -executable -exec cp {} /usr/local/bin/ \; \
+    && rm -rf spire-${SPIRE_VERSION}-linux-arm64-musl
+
+WORKDIR /root
+CMD ["sleep", "infinity"]
