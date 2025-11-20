@@ -1,5 +1,6 @@
 FROM ubuntu:22.04
 
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     net-tools \
@@ -9,7 +10,15 @@ RUN apt-get update && apt-get install -y \
     jq \
     openssl \
     ca-certificates \
+    tar \
+    gzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install SPIRE Agent
+ARG SPIRE_VERSION=1.13.0
+RUN curl -s -L "https://github.com/spiffe/spire/releases/download/v${SPIRE_VERSION}/spire-${SPIRE_VERSION}-linux-arm64-musl.tar.gz" | tar -xz \
+    && find . -name "spire-agent" -type f -executable -exec cp {} /usr/local/bin/ \; \
+    && rm -rf spire-${SPIRE_VERSION}-linux-arm64-musl
 
 WORKDIR /root
 CMD ["sleep", "infinity"]
