@@ -69,6 +69,23 @@ spec:
         - name: certs
           mountPath: /tmp/certs
           readOnly: true
+      - name: spiffe-debug
+        image: spiffe-agent-debug:latest
+        imagePullPolicy: Never
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        volumeMounts:
+        - name: spiffe-socket
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: certs
+          mountPath: /tmp/certs
+          readOnly: true
       volumes:
       - name: spiffe-socket
         hostPath:
