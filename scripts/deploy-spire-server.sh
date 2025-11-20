@@ -9,6 +9,8 @@ ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 DEPLOY_DIR="${DEPLOY_DIR:-${ROOT_DIR}/deploy/spire/server}"
 CERT_DIR="${CERT_DIR:-${ROOT_DIR}/artifacts/certs}"
+KIND="${KIND:-kind}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-spiffe-helper}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
 
@@ -53,11 +55,11 @@ kubectl apply -f "${DEPLOY_DIR}/configmap.yaml"
 echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating Service..."
 kubectl apply -f "${DEPLOY_DIR}/service.yaml"
 
-echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating StatefulSet..."
-kubectl apply -f "${DEPLOY_DIR}/statefulset.yaml"
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Creating Deployment..."
+kubectl apply -f "${DEPLOY_DIR}/deployment.yaml"
 
-echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Waiting for StatefulSet rollout..."
-kubectl rollout status statefulset/spire-server -n spire-server --timeout=300s
+echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Waiting for Deployment rollout..."
+kubectl rollout status deployment/spire-server -n spire-server --timeout=300s
 
 echo -e "${COLOR_CYAN}[deploy]${COLOR_RESET} Waiting for pod to be ready..."
 if ! kubectl wait --for=condition=ready pod -l app=spire-server -n spire-server --timeout=300s; then

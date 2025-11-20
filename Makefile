@@ -9,6 +9,8 @@ DEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-agent.sh
 UNDEPLOY_SPIRE_AGENT_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-agent.sh
 DEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/deploy-registration.sh
 UNDEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/undeploy-registration.sh
+DEPLOY_SPIRE_CSI_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-csi.sh
+UNDEPLOY_SPIRE_CSI_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-csi.sh
 SMOKE_TEST_SCRIPT := $(ROOT_DIR)/scripts/smoke-test.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
@@ -139,6 +141,28 @@ deploy-registration: check-cluster
 undeploy-registration:
 	@$(UNDEPLOY_REGISTRATION_SCRIPT)
 
+.PHONY: list-entries
+list-entries: check-cluster
+	@echo "$(COLOR_CYAN)[list-entries]$(COLOR_RESET) Listing SPIRE workload entries..."
+	@SPIRE_SERVER_POD=$$($(KUBECTL) get pods -n spire-server -l app=spire-server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo ""); \
+	if [ -z "$$SPIRE_SERVER_POD" ]; then \
+		echo "$(COLOR_RED)[list-entries] Error:$(COLOR_RESET) SPIRE server pod not found. Deploy SPIRE server first."; \
+		exit 1; \
+	fi; \
+	$(KUBECTL) exec -n spire-server "$$SPIRE_SERVER_POD" -- \
+		/opt/spire/bin/spire-server entry show || { \
+		echo "$(COLOR_YELLOW)[list-entries]$(COLOR_RESET) Warning: Could not list entries"; \
+		exit 1; \
+	}
+
+.PHONY: deploy-spire-csi
+deploy-spire-csi: check-cluster
+	@$(DEPLOY_SPIRE_CSI_SCRIPT)
+
+.PHONY: undeploy-spire-csi
+undeploy-spire-csi:
+	@$(UNDEPLOY_SPIRE_CSI_SCRIPT)
+
 .PHONY: smoke-test
 smoke-test: check-cluster
 	@KUBECONFIG_PATH="$(KUBECONFIG_PATH)" ROOT_DIR="$(ROOT_DIR)" $(SMOKE_TEST_SCRIPT)
@@ -147,7 +171,26 @@ smoke-test: check-cluster
 .PHONY: env-up
 env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration
 	@echo "$(COLOR_BRIGHT_GREEN)[env-up]$(COLOR_RESET) $(COLOR_BOLD)Environment setup complete!$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)[env-up]$(COLOR_RESET) To deploy SPIRE CSI driver, run: $(COLOR_BOLD)make deploy-spire-csi$(COLOR_RESET)"
 
 .PHONY: env-down
-env-down: undeploy-registration undeploy-spire-agent undeploy-spire-server cluster-down clean
+env-down: undeploy-registration undeploy-spire-csi undeploy-spire-agent undeploy-spire-server cluster-down clean
 	@echo "$(COLOR_BRIGHT_GREEN)[env-down]$(COLOR_RESET) $(COLOR_BOLD)Environment teardown complete!$(COLOR_RESET)"
+
+# Container image settings
+HELPER_IMAGE_NAME ?= spiffe-helper-rust
+HELPER_IMAGE_TAG ?= test
+
+.PHONY: load-helper-image
+load-helper-image: check-cluster
+	@echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Loading spiffe-helper-rust image into kind cluster..."
+	@if ! docker images | grep -q "^$(HELPER_IMAGE_NAME)[[:space:]]*$(HELPER_IMAGE_TAG)"; then \
+		echo "$(COLOR_RED)[load-helper-image] Error:$(COLOR_RESET) Image $(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG) not found locally. Build it first."; \
+		exit 1; \
+	fi
+	@$(KIND) load docker-image "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
+	@echo "$(COLOR_GREEN)[load-helper-image]$(COLOR_RESET) Helper image loaded into kind cluster"
+
+.PHONY: load-images
+load-images: load-helper-image
+	@echo "$(COLOR_BRIGHT_GREEN)[load-images]$(COLOR_RESET) $(COLOR_BOLD)All images loaded into kind cluster!$(COLOR_RESET)"

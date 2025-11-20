@@ -10,6 +10,8 @@ KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 DEPLOY_DIR="${DEPLOY_DIR:-${ROOT_DIR}/deploy/spire/agent}"
 CERT_DIR="${CERT_DIR:-${ROOT_DIR}/artifacts/certs}"
 BOOTSTRAP_BUNDLE="${CERT_DIR}/bootstrap-bundle.pem"
+KIND="${KIND:-kind}"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-spiffe-helper}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
 

@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: spire-server
   namespace: spire-server
@@ -7,7 +7,6 @@ metadata:
     app: spire-server
     component: server
 spec:
-  serviceName: spire-server
   replicas: 1
   selector:
     matchLabels:
@@ -82,5 +81,3 @@ spec:
           secretName: spire-server-bootstrap
       - name: data
         emptyDir: {}
-  volumeClaimTemplates: []
-
