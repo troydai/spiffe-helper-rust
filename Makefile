@@ -169,7 +169,7 @@ smoke-test: check-cluster
 
 # Top-level orchestration targets
 .PHONY: env-up
-env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration
+env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration load-images
 	@echo "$(COLOR_BRIGHT_GREEN)[env-up]$(COLOR_RESET) $(COLOR_BOLD)Environment setup complete!$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)[env-up]$(COLOR_RESET) To deploy SPIRE CSI driver, run: $(COLOR_BOLD)make deploy-spire-csi$(COLOR_RESET)"
 
@@ -180,6 +180,9 @@ env-down: undeploy-registration undeploy-spire-csi undeploy-spire-agent undeploy
 # Container image settings
 HELPER_IMAGE_NAME ?= spiffe-helper-rust
 HELPER_IMAGE_TAG ?= test
+DEBUG_IMAGE_NAME ?= spiffe-debug
+DEBUG_IMAGE_TAG ?= latest
+DEBUG_DOCKERFILE := $(ROOT_DIR)/Dockerfile.debug
 
 .PHONY: load-helper-image
 load-helper-image: check-cluster
@@ -191,6 +194,18 @@ load-helper-image: check-cluster
 	@$(KIND) load docker-image "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
 	@echo "$(COLOR_GREEN)[load-helper-image]$(COLOR_RESET) Helper image loaded into kind cluster"
 
+.PHONY: build-debug-image
+build-debug-image:
+	@echo "$(COLOR_CYAN)[build-debug-image]$(COLOR_RESET) Building debug container image..."
+	@docker build -f "$(DEBUG_DOCKERFILE)" -t "$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)" .
+	@echo "$(COLOR_GREEN)[build-debug-image]$(COLOR_RESET) Debug container image built: $(COLOR_BOLD)$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)$(COLOR_RESET)"
+
+.PHONY: load-debug-image
+load-debug-image: build-debug-image check-cluster
+	@echo "$(COLOR_CYAN)[load-debug-image]$(COLOR_RESET) Loading debug container image into kind cluster..."
+	@$(KIND) load docker-image "$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
+	@echo "$(COLOR_GREEN)[load-debug-image]$(COLOR_RESET) Debug container image loaded into kind cluster"
+
 .PHONY: load-images
-load-images: load-helper-image
+load-images: load-helper-image load-debug-image
 	@echo "$(COLOR_BRIGHT_GREEN)[load-images]$(COLOR_RESET) $(COLOR_BOLD)All images loaded into kind cluster!$(COLOR_RESET)"
