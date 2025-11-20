@@ -26,9 +26,9 @@ RUN touch src/main.rs && \
 # Runtime stage
 FROM debian:bookworm-slim
 
-# Install ca-certificates for TLS connections
+# Install ca-certificates for TLS connections and dumb-init for signal handling
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates dumb-init && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -36,5 +36,6 @@ WORKDIR /app
 # Copy the binary from builder stage
 COPY --from=builder /app/target/release/spiffe-helper-rust /usr/local/bin/spiffe-helper-rust
 
-# Set the entrypoint
-ENTRYPOINT ["/usr/local/bin/spiffe-helper-rust"]
+# Use dumb-init as entrypoint for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["/usr/local/bin/spiffe-helper-rust"]
