@@ -188,11 +188,12 @@ DEBUG_DOCKERFILE := $(ROOT_DIR)/Dockerfile.debug
 load-helper-image: check-cluster
 	@echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Loading spiffe-helper-rust image into kind cluster..."
 	@if ! docker images | grep -q "^$(HELPER_IMAGE_NAME)[[:space:]]*$(HELPER_IMAGE_TAG)"; then \
-		echo "$(COLOR_RED)[load-helper-image] Error:$(COLOR_RESET) Image $(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG) not found locally. Build it first."; \
-		exit 1; \
+		echo "$(COLOR_YELLOW)[load-helper-image]$(COLOR_RESET) Image $(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG) not found locally. Skipping..."; \
+		echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Note: Build the image first if you need it for httpbin workloads."; \
+	else \
+		$(KIND) load docker-image "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"; \
+		echo "$(COLOR_GREEN)[load-helper-image]$(COLOR_RESET) Helper image loaded into kind cluster"; \
 	fi
-	@$(KIND) load docker-image "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
-	@echo "$(COLOR_GREEN)[load-helper-image]$(COLOR_RESET) Helper image loaded into kind cluster"
 
 .PHONY: build-debug-image
 build-debug-image:
@@ -201,7 +202,11 @@ build-debug-image:
 	@echo "$(COLOR_GREEN)[build-debug-image]$(COLOR_RESET) Debug container image built: $(COLOR_BOLD)$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)$(COLOR_RESET)"
 
 .PHONY: load-debug-image
-load-debug-image: build-debug-image check-cluster
+load-debug-image: check-cluster
+	@if ! docker images | grep -q "^$(DEBUG_IMAGE_NAME)[[:space:]]*$(DEBUG_IMAGE_TAG)"; then \
+		echo "$(COLOR_CYAN)[load-debug-image]$(COLOR_RESET) Debug image not found. Building..." ; \
+		$(MAKE) build-debug-image; \
+	fi
 	@echo "$(COLOR_CYAN)[load-debug-image]$(COLOR_RESET) Loading debug container image into kind cluster..."
 	@$(KIND) load docker-image "$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
 	@echo "$(COLOR_GREEN)[load-debug-image]$(COLOR_RESET) Debug container image loaded into kind cluster"
