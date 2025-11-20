@@ -1,18 +1,17 @@
-FROM ubuntu:22.04
+FROM alpine:3.20
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     curl \
     net-tools \
     iproute2 \
-    dnsutils \
+    bind-tools \
     vim \
     jq \
     openssl \
     ca-certificates \
     tar \
-    gzip \
-    && rm -rf /var/lib/apt/lists/*
+    gzip
 
 # Install SPIRE Agent
 ARG SPIRE_VERSION=1.13.0
