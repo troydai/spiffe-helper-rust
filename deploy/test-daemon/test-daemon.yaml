@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-daemon
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-daemon
+  namespace: test-daemon
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spiffe-helper-config
+  namespace: test-daemon
+data:
+  helper.conf: |
+    agent_address = "unix:///run/spire/sockets/workload_api.sock"
+    daemon_mode = true
+    cert_dir = "/tmp/certs"
+    health_checks {
+        listener_enabled = true
+        bind_port = 8080
+        liveness_path = "/health/live"
+        readiness_path = "/health/ready"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-daemon
+  namespace: test-daemon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-daemon
+  template:
+    metadata:
+      labels:
+        app: test-daemon
+    spec:
+      serviceAccountName: test-daemon
+      containers:
+      - name: spiffe-helper
+        image: spiffe-helper-rust:test
+        imagePullPolicy: Never
+        args:
+        - --config
+        - /etc/spiffe-helper/helper.conf
+        volumeMounts:
+        - name: spiffe-socket
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: config
+          mountPath: /etc/spiffe-helper
+        - name: certs
+          mountPath: /tmp/certs
+        ports:
+        - containerPort: 8080
+          name: health
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: spiffe-socket
+        hostPath:
+          path: /run/spire/sockets
+          type: DirectoryOrCreate
+      - name: config
+        configMap:
+          name: spiffe-helper-config
+      - name: certs
+        emptyDir: {}

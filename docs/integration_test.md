@@ -295,6 +295,45 @@ make smoke-test
 # If smoke-test passes, the environment is ready for development
 ```
 
+### Signal Handling Test (`make test-signal-handling`)
+
+Tests that `dumb-init` is properly configured and signal handling works correctly:
+
+```bash
+make test-signal-handling
+```
+
+This target validates:
+- **dumb-init is PID 1**: Verifies that `dumb-init` runs as PID 1 in the container
+- **Process hierarchy**: Confirms `spiffe-helper-rust` runs as a child process of `dumb-init`
+- **Health check endpoints**: Verifies health check endpoints respond correctly
+- **SIGTERM handling**: Tests graceful shutdown by deleting the pod and checking logs for graceful shutdown messages
+- **Clean exit**: Verifies the container exits with code 0 after graceful shutdown
+
+**Prerequisites:**
+- Environment must be set up (`make env-up`)
+- Docker image must be built and loaded into kind:
+  ```bash
+  docker build -t spiffe-helper-rust:test .
+  kind load docker-image spiffe-helper-rust:test --name spiffe-helper
+  ```
+
+**Example usage:**
+
+```bash
+# Set up the environment
+make env-up
+
+# Build and load the Docker image
+docker build -t spiffe-helper-rust:test .
+kind load docker-image spiffe-helper-rust:test --name spiffe-helper
+
+# Test signal handling
+make test-signal-handling
+```
+
+This test deploys a temporary pod running `spiffe-helper-rust` in daemon mode, verifies `dumb-init` configuration, and tests graceful shutdown behavior.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -521,5 +560,6 @@ The system registers the following sample workloads:
 | `deploy-registration` | Register workload entries | `check-cluster` |
 | `undeploy-registration` | Remove workload registrations | None |
 | `smoke-test` | Validate SPIRE environment health | `check-cluster` |
+| `test-signal-handling` | Test dumb-init signal handling in daemon mode | `check-cluster` |
 | `env-up` | Complete environment setup | `tools`, `certs`, `cluster-up`, `deploy-spire-server`, `deploy-spire-agent`, `deploy-registration` |
 | `env-down` | Complete environment teardown | `undeploy-registration`, `undeploy-spire-agent`, `undeploy-spire-server`, `cluster-down`, `clean` |
