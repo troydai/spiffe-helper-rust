@@ -196,6 +196,23 @@ if [ "$POD_STATUS" != "Running" ] || [ "$CONTAINER_STATUS" != "true" ]; then
     exit 1
 fi
 
+# Wait for certificate files to be created (certificate fetching may take time with retries)
+echo -e "${GREEN}  Waiting for certificate files to be created...${NC}"
+for i in {1..40}; do
+    if kubectl exec -n "$NAMESPACE" "$TEST_POD" -- test -f /tmp/certs/svid.pem 2>/dev/null && \
+       kubectl exec -n "$NAMESPACE" "$TEST_POD" -- test -f /tmp/certs/svid_key.pem 2>/dev/null; then
+        echo -e "${GREEN}  ✓ Certificate files created${NC}"
+        break
+    fi
+    sleep 1
+done
+
+if ! kubectl exec -n "$NAMESPACE" "$TEST_POD" -- test -f /tmp/certs/svid.pem 2>/dev/null; then
+    echo -e "${RED}Error: Certificate files were not created within 40 seconds${NC}"
+    kubectl logs -n "$NAMESPACE" "$TEST_POD" 2>&1 | tail -30
+    exit 1
+fi
+
 # Check logs for certificate fetching success
 echo ""
 echo -e "${GREEN}Verifying certificate fetching...${NC}"
