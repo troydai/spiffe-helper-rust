@@ -1,4 +1,5 @@
 mod config;
+mod workload_api;
 
 use anyhow::{Context, Result};
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
@@ -91,6 +92,36 @@ async fn run_once(config: config::Config) -> Result<()> {
 
 async fn run_daemon(config: config::Config) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
+
+    // Fetch X.509 certificate and key at startup
+    // This ensures certificates are available before the daemon continues
+    if let (Some(ref agent_address), Some(ref cert_dir)) =
+        (config.agent_address.as_ref(), config.cert_dir.as_ref())
+    {
+        println!(
+            "Fetching X.509 certificate from SPIRE agent at {}...",
+            agent_address
+        );
+        let cert_dir_path = std::path::PathBuf::from(cert_dir);
+        if let Err(e) = workload_api::fetch_and_write_x509_svid(
+            agent_address,
+            &cert_dir_path,
+            config.svid_file_name.as_deref(),
+            config.svid_key_file_name.as_deref(),
+        )
+        .await
+        {
+            eprintln!("Failed to fetch X.509 certificate: {}", e);
+            std::process::exit(1);
+        }
+        println!(
+            "Successfully fetched and wrote X.509 certificate to {}",
+            cert_dir
+        );
+    } else {
+        eprintln!("Error: agent_address and cert_dir must be configured for daemon mode");
+        std::process::exit(1);
+    }
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
