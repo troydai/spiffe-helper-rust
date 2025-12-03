@@ -204,6 +204,16 @@ if [ "$INIT_COMPLETED" != "true" ]; then
     exit 1
 fi
 
+# Wait for main container to be ready
+echo -e "${COLOR_GREEN}  Waiting for main container to start...${COLOR_RESET}"
+for i in {1..30}; do
+    CONTAINER_READY=$(kubectl get pod -n "$NAMESPACE" "$TEST_POD" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+    if [ "$CONTAINER_READY" = "true" ]; then
+        break
+    fi
+    sleep 1
+done
+
 # Verify certificate files exist
 echo ""
 echo -e "${COLOR_GREEN}Verifying certificates exist in pod...${COLOR_RESET}"
