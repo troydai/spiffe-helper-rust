@@ -1,17 +1,19 @@
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 # Install dependencies
-RUN apk add --no-cache \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     curl \
     net-tools \
     iproute2 \
-    bind-tools \
+    dnsutils \
     vim \
     jq \
     openssl \
     ca-certificates \
     tar \
-    gzip
+    gzip && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install SPIRE Agent
 ARG SPIRE_VERSION=1.13.0
