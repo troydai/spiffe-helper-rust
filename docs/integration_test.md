@@ -247,6 +247,7 @@ This target orchestrates:
 4. Deploys SPIRE server (`make deploy-spire-server`)
 5. Deploys SPIRE agents (`make deploy-spire-agent`)
 6. Deploys workload registrations (`make deploy-registration`)
+7. Loads container images into the kind cluster (`make load-images`)
 
 ### Complete Environment Teardown (`make env-down`)
 
@@ -262,6 +263,81 @@ This target:
 3. Removes SPIRE server (`make undeploy-spire-server`)
 4. Deletes the kind cluster (`make cluster-down`)
 5. Cleans generated artifacts (`make clean`)
+
+## Container Image Management
+
+The integration test environment requires container images to be loaded into the kind cluster. The Makefile provides several targets to manage these images.
+
+### Load Images (`make load-images`)
+
+Loads all required container images into the kind cluster:
+
+```bash
+make load-images
+```
+
+This target loads:
+- **Helper image** (`spiffe-helper-rust:test`) - The main spiffe-helper-rust binary image
+- **Debug image** (`spiffe-debug:latest`) - A debug container image with useful tools
+
+The `load-images` target is automatically included in `make env-up`, so you typically don't need to run it manually unless you've rebuilt images.
+
+### Load Helper Image (`make load-helper-image`)
+
+Loads the spiffe-helper-rust image into the kind cluster:
+
+```bash
+make load-helper-image
+```
+
+This target:
+- Checks if the image `spiffe-helper-rust:test` exists locally
+- If found, loads it into the kind cluster using `kind load docker-image`
+- If not found, prints a warning and skips loading
+
+**Note**: You must build the helper image first if it doesn't exist. The image is used by workloads like httpbin that require the spiffe-helper-rust binary.
+
+### Load Debug Image (`make load-debug-image`)
+
+Loads or builds the debug container image:
+
+```bash
+make load-debug-image
+```
+
+This target:
+- Checks if the debug image `spiffe-debug:latest` exists locally
+- If not found, automatically builds it using `make build-debug-image`
+- Loads the image into the kind cluster
+
+The debug image is built from `Dockerfile.debug` and contains useful debugging tools for troubleshooting SPIRE workloads.
+
+### Build Debug Image (`make build-debug-image`)
+
+Builds the debug container image:
+
+```bash
+make build-debug-image
+```
+
+This target builds the debug image from `Dockerfile.debug` and tags it as `spiffe-debug:latest`. The image is automatically built by `load-debug-image` if it doesn't exist.
+
+## Workload Entry Management
+
+### List Workload Entries (`make list-entries`)
+
+Lists all registered SPIRE workload entries:
+
+```bash
+make list-entries
+```
+
+This target:
+- Connects to the SPIRE server pod
+- Executes `spire-server entry show` to display all registered entries
+- Shows SPIFFE IDs, parent IDs, and selectors for each entry
+
+Useful for verifying that workload registrations were created successfully.
 
 ## Validation and Testing
 
@@ -521,5 +597,12 @@ The system registers the following sample workloads:
 | `deploy-registration` | Register workload entries | `check-cluster` |
 | `undeploy-registration` | Remove workload registrations | None |
 | `smoke-test` | Validate SPIRE environment health | `check-cluster` |
-| `env-up` | Complete environment setup | `tools`, `certs`, `cluster-up`, `deploy-spire-server`, `deploy-spire-agent`, `deploy-registration` |
+| `list-entries` | List all registered SPIRE workload entries | `check-cluster` |
+| `load-images` | Load all container images into kind cluster | `check-cluster` |
+| `load-helper-image` | Load spiffe-helper-rust image into kind cluster | `check-cluster` |
+| `load-debug-image` | Load or build debug container image | `check-cluster` |
+| `build-debug-image` | Build debug container image | None |
+| `env-up` | Complete environment setup | `tools`, `certs`, `cluster-up`, `deploy-spire-server`, `deploy-spire-agent`, `deploy-registration`, `load-images` |
 | `env-down` | Complete environment teardown | `undeploy-registration`, `undeploy-spire-agent`, `undeploy-spire-server`, `cluster-down`, `clean` |
+
+> **Note**: The Makefile also references `deploy-spire-csi` and `undeploy-spire-csi` targets for SPIRE CSI driver deployment, but the corresponding scripts are not yet implemented. These targets will fail if invoked.
