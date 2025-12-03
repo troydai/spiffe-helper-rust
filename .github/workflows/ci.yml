@@ -102,28 +102,8 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      - name: Verify image was built
-        run: |
-          docker images
-          docker images | grep spiffe-helper-rust || (echo "Image not found!" && exit 1)
-
-      - name: Set up environment (create cluster first)
-        run: |
-          make tools
-          make certs
-          make cluster-up
-
-      - name: Load helper image into kind
-        run: |
-          export KUBECONFIG=$(pwd)/artifacts/kubeconfig
-          kind load docker-image spiffe-helper-rust:test --name spiffe-helper
-
-      - name: Complete environment setup
-        run: |
-          make deploy-spire-server
-          make deploy-spire-agent
-          make deploy-registration
-          make load-debug-image
+      - name: Set up environment
+        run: make env-up
 
       - name: Run smoke-test
         run: make smoke-test
