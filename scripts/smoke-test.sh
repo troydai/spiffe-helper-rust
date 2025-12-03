@@ -149,6 +149,29 @@ else
 fi
 echo ""
 
+# Ensure node alias exists for one-shot test (shared resource)
+NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
+if ! kubectl exec -n spire-server "${SERVER_POD}" -- \
+	/opt/spire/bin/spire-server entry show -spiffeID "${NODE_ALIAS_ID}" 2>/dev/null | grep -q "${NODE_ALIAS_ID}"; then
+	echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} Creating node alias for tests...${COLOR_RESET}"
+	kubectl exec -n spire-server "${SERVER_POD}" -- \
+		/opt/spire/bin/spire-server entry create \
+		-node \
+		-spiffeID "${NODE_ALIAS_ID}" \
+		-selector "k8s_psat:cluster:spiffe-helper" > /dev/null 2>&1 || true
+fi
+
+# Test 7: Verify one-shot mode creates certificates
+echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 7: One-Shot Certificate Creation${COLOR_RESET}"
+if "${SCRIPT_DIR}/test-oneshot-x509.sh"; then
+	echo -e "${COLOR_GREEN}✓${COLOR_RESET} One-shot mode certificate creation test passed"
+	TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+	echo -e "${COLOR_RED}✗${COLOR_RESET} One-shot mode certificate creation test failed"
+	TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
 # Summary
 echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}=== Test Summary ===${COLOR_RESET}"
 echo -e "${COLOR_GREEN}Passed: ${TESTS_PASSED}${COLOR_RESET}"

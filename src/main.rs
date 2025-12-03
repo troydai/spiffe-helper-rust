@@ -64,29 +64,60 @@ async fn main() -> Result<()> {
 
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
-    if !daemon_mode {
+    let result = if !daemon_mode {
         // Non-daemon mode - fetch certificates once and exit
         run_once(config).await
     } else {
         // Run daemon mode
         run_daemon(config).await
+    };
+
+    // Handle errors and exit with appropriate code
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
+
+    Ok(())
 }
 
 async fn run_once(config: config::Config) -> Result<()> {
     println!("Running spiffe-helper-rust in one-shot mode...");
 
-    // Ensure cert directory exists
-    if let Some(ref cert_dir) = config.cert_dir {
-        std::fs::create_dir_all(cert_dir)
-            .with_context(|| format!("Failed to create cert directory: {}", cert_dir))?;
-        println!("Cert directory ready: {}", cert_dir);
-    }
+    fetch_x509_certificate(&config).await?;
+    println!("One-shot mode complete");
+    Ok(())
+}
 
-    // TODO: Implement actual certificate fetching from SPIRE Workload API
-    // For now, this is a placeholder that exits successfully
-    // The actual implementation will fetch X.509 SVIDs and JWT tokens from the SPIRE agent
-    println!("One-shot mode complete (certificate fetching not yet implemented)");
+/// Fetches X.509 certificate from SPIRE agent and writes it to the configured directory.
+/// This is a common function used by both one-shot and daemon modes.
+async fn fetch_x509_certificate(config: &config::Config) -> Result<()> {
+    let agent_address = config
+        .agent_address
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))?;
+    let cert_dir = config
+        .cert_dir
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
+
+    println!(
+        "Fetching X.509 certificate from SPIRE agent at {}...",
+        agent_address
+    );
+    let cert_dir_path = std::path::PathBuf::from(cert_dir);
+    workload_api::fetch_and_write_x509_svid(
+        agent_address,
+        &cert_dir_path,
+        config.svid_file_name.as_deref(),
+        config.svid_key_file_name.as_deref(),
+    )
+    .await
+    .with_context(|| "Failed to fetch X.509 certificate")?;
+    println!(
+        "Successfully fetched and wrote X.509 certificate to {}",
+        cert_dir
+    );
     Ok(())
 }
 
@@ -95,33 +126,7 @@ async fn run_daemon(config: config::Config) -> Result<()> {
 
     // Fetch X.509 certificate and key at startup
     // This ensures certificates are available before the daemon continues
-    if let (Some(ref agent_address), Some(ref cert_dir)) =
-        (config.agent_address.as_ref(), config.cert_dir.as_ref())
-    {
-        println!(
-            "Fetching X.509 certificate from SPIRE agent at {}...",
-            agent_address
-        );
-        let cert_dir_path = std::path::PathBuf::from(cert_dir);
-        if let Err(e) = workload_api::fetch_and_write_x509_svid(
-            agent_address,
-            &cert_dir_path,
-            config.svid_file_name.as_deref(),
-            config.svid_key_file_name.as_deref(),
-        )
-        .await
-        {
-            eprintln!("Failed to fetch X.509 certificate: {}", e);
-            std::process::exit(1);
-        }
-        println!(
-            "Successfully fetched and wrote X.509 certificate to {}",
-            cert_dir
-        );
-    } else {
-        eprintln!("Error: agent_address and cert_dir must be configured for daemon mode");
-        std::process::exit(1);
-    }
+    fetch_x509_certificate(&config).await?;
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
