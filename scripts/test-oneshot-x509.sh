@@ -144,7 +144,8 @@ spec:
       mountPath: /tmp/certs
   containers:
   - name: sleep
-    image: busybox:latest
+    image: spiffe-helper-rust:test
+    imagePullPolicy: Never
     command: ["sleep", "3600"]
     volumeMounts:
     - name: certs
@@ -239,23 +240,22 @@ else
     exit 1
 fi
 
-# Verify certificate content (basic check)
-CERT_CONTENT=$(kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- cat /tmp/certs/svid.pem 2>/dev/null || echo "")
-if echo "$CERT_CONTENT" | grep -q "BEGIN CERTIFICATE"; then
-    echo -e "${COLOR_GREEN}  ✓ Certificate file contains valid PEM format${COLOR_RESET}"
+# Verify certificate content using openssl
+echo -e "${COLOR_GREEN}Verifying certificate content using openssl...${COLOR_RESET}"
+if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- openssl x509 -in /tmp/certs/svid.pem -noout -text > /dev/null 2>&1; then
+    echo -e "${COLOR_GREEN}  ✓ Certificate file is valid${COLOR_RESET}"
 else
-    echo -e "${COLOR_RED}  ✗ Certificate file does not contain valid PEM format${COLOR_RESET}"
+    echo -e "${COLOR_RED}  ✗ Certificate file is invalid${COLOR_RESET}"
     # Cleanup
     kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
     kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
     exit 1
 fi
 
-KEY_CONTENT=$(kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- cat /tmp/certs/svid_key.pem 2>/dev/null || echo "")
-if echo "$KEY_CONTENT" | grep -q "BEGIN.*PRIVATE KEY"; then
-    echo -e "${COLOR_GREEN}  ✓ Private key file contains valid PEM format${COLOR_RESET}"
+if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- openssl pkey -in /tmp/certs/svid_key.pem -noout -text > /dev/null 2>&1; then
+    echo -e "${COLOR_GREEN}  ✓ Private key file is valid${COLOR_RESET}"
 else
-    echo -e "${COLOR_RED}  ✗ Private key file does not contain valid PEM format${COLOR_RESET}"
+    echo -e "${COLOR_RED}  ✗ Private key file is invalid${COLOR_RESET}"
     # Cleanup
     kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
     kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
