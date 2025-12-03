@@ -39,6 +39,22 @@ jobs:
       - name: Test
         run: cargo test --all-targets
 
+      - name: Set up Docker Buildx
+        if: hashFiles('Dockerfile') != ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        if: hashFiles('Dockerfile') != ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: spiffe-helper-rust:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
   smoke-test:
     runs-on: ubuntu-latest
     steps:
