@@ -41,6 +41,7 @@ spec:
         image: spiffe-helper-rust:test
         imagePullPolicy: Never
         args:
+        - /usr/local/bin/spiffe-helper-rust
         - --config
         - /etc/spiffe-helper/helper.conf
         volumeMounts:
