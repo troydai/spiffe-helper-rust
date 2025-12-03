@@ -200,11 +200,7 @@ build-helper-image:
 	@echo "$(COLOR_GREEN)[build-helper-image]$(COLOR_RESET) Helper container image built: $(COLOR_BOLD)$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)$(COLOR_RESET)"
 
 .PHONY: load-helper-image
-load-helper-image: check-cluster
-	@if ! docker images | grep -q "^$(HELPER_IMAGE_NAME)[[:space:]]*$(HELPER_IMAGE_TAG)"; then \
-		echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Helper image not found. Building..." ; \
-		$(MAKE) build-helper-image; \
-	fi
+load-helper-image: check-cluster build-helper-image
 	@echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Loading spiffe-helper-rust image into kind cluster..."
 	@$(KIND) load docker-image "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
 	@echo "$(COLOR_GREEN)[load-helper-image]$(COLOR_RESET) Helper image loaded into kind cluster"
@@ -216,11 +212,7 @@ build-debug-image:
 	@echo "$(COLOR_GREEN)[build-debug-image]$(COLOR_RESET) Debug container image built: $(COLOR_BOLD)$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)$(COLOR_RESET)"
 
 .PHONY: load-debug-image
-load-debug-image: check-cluster
-	@if ! docker images | grep -q "^$(DEBUG_IMAGE_NAME)[[:space:]]*$(DEBUG_IMAGE_TAG)"; then \
-		echo "$(COLOR_CYAN)[load-debug-image]$(COLOR_RESET) Debug image not found. Building..." ; \
-		$(MAKE) build-debug-image; \
-	fi
+load-debug-image: check-cluster build-debug-image
 	@echo "$(COLOR_CYAN)[load-debug-image]$(COLOR_RESET) Loading debug container image into kind cluster..."
 	@$(KIND) load docker-image "$(DEBUG_IMAGE_NAME):$(DEBUG_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
 	@echo "$(COLOR_GREEN)[load-debug-image]$(COLOR_RESET) Debug container image loaded into kind cluster"

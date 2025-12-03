@@ -190,6 +190,7 @@ To get started quickly:
 
 ```bash
 # Set up the entire integration test environment
+# Note: This will build the Docker images if needed
 make env-up
 
 # Run smoke tests to validate the environment

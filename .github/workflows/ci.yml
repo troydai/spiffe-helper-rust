@@ -88,6 +88,13 @@ jobs:
       - name: Verify tools
         run: make tools
 
+      # Explicitly build images to ensure they are ready and to make the CI flow clear.
+      # The smoke-test job is self-contained and does not depend on the 'build' job artifacts.
+      - name: Build Docker images
+        run: |
+          make build-helper-image
+          make build-debug-image
+
       - name: Set up environment
         run: make env-up
 
