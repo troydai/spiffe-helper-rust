@@ -102,22 +102,11 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      - name: Set up environment (without loading images)
-        run: |
-          make tools
-          make certs
-          make cluster-up
-          make deploy-spire-server
-          make deploy-spire-agent
-          make deploy-registration
+      - name: Verify image was built
+        run: docker images | grep spiffe-helper-rust
 
-      - name: Load Docker image into kind cluster
-        run: |
-          export KUBECONFIG=$(pwd)/artifacts/kubeconfig
-          kind load docker-image spiffe-helper-rust:test --name spiffe-helper
-
-      - name: Load debug image
-        run: make load-debug-image
+      - name: Set up environment
+        run: make env-up
 
       - name: Run smoke-test
         run: make smoke-test
