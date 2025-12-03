@@ -22,7 +22,7 @@ FROM debian:bookworm-slim
 
 # Install ca-certificates for TLS connections and dumb-init for signal handling
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates dumb-init && \
+    apt-get install -y --no-install-recommends ca-certificates dumb-init openssl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
