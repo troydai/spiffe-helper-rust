@@ -11,6 +11,8 @@ DEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/deploy-registration.sh
 UNDEPLOY_REGISTRATION_SCRIPT := $(ROOT_DIR)/scripts/undeploy-registration.sh
 DEPLOY_SPIRE_CSI_SCRIPT := $(ROOT_DIR)/scripts/deploy-spire-csi.sh
 UNDEPLOY_SPIRE_CSI_SCRIPT := $(ROOT_DIR)/scripts/undeploy-spire-csi.sh
+DEPLOY_HTTPBIN_SCRIPT := $(ROOT_DIR)/scripts/deploy-httpbin.sh
+UNDEPLOY_HTTPBIN_SCRIPT := $(ROOT_DIR)/scripts/undeploy-httpbin.sh
 SMOKE_TEST_SCRIPT := $(ROOT_DIR)/scripts/smoke-test.sh
 KIND ?= kind
 KIND_CLUSTER_NAME ?= spiffe-helper
@@ -163,17 +165,25 @@ deploy-spire-csi: check-cluster
 undeploy-spire-csi:
 	@$(UNDEPLOY_SPIRE_CSI_SCRIPT)
 
+.PHONY: deploy-httpbin
+deploy-httpbin: check-cluster
+	@$(DEPLOY_HTTPBIN_SCRIPT)
+
+.PHONY: undeploy-httpbin
+undeploy-httpbin:
+	@$(UNDEPLOY_HTTPBIN_SCRIPT)
+
 .PHONY: smoke-test
 smoke-test: check-cluster
 	@KUBECONFIG_PATH="$(KUBECONFIG_PATH)" ROOT_DIR="$(ROOT_DIR)" $(SMOKE_TEST_SCRIPT)
 
 # Top-level orchestration targets
 .PHONY: env-up
-env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration load-images
+env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration load-images deploy-httpbin
 	@echo "$(COLOR_BRIGHT_GREEN)[env-up]$(COLOR_RESET) $(COLOR_BOLD)Environment setup complete!$(COLOR_RESET)"
 
 .PHONY: env-down
-env-down: undeploy-registration undeploy-spire-agent undeploy-spire-server cluster-down clean
+env-down: undeploy-httpbin undeploy-registration undeploy-spire-agent undeploy-spire-server cluster-down clean
 	@echo "$(COLOR_BRIGHT_GREEN)[env-down]$(COLOR_RESET) $(COLOR_BOLD)Environment teardown complete!$(COLOR_RESET)"
 
 # Container image settings

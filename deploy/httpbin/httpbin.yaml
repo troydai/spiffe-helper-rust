@@ -16,7 +16,7 @@ metadata:
   namespace: httpbin
 data:
   helper.conf: |
-    agent_address = "unix:///run/spire/sockets/workload_api.sock"
+    agent_address = "unix:///run/spire/sockets/agent.sock"
     daemon_mode = false
     cert_dir = "/tmp/certs"
 ---
