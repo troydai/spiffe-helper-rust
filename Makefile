@@ -179,11 +179,11 @@ smoke-test: check-cluster
 
 # Top-level orchestration targets
 .PHONY: env-up
-env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration load-images deploy-httpbin
+env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-spire-csi deploy-registration load-images deploy-httpbin
 	@echo "$(COLOR_BRIGHT_GREEN)[env-up]$(COLOR_RESET) $(COLOR_BOLD)Environment setup complete!$(COLOR_RESET)"
 
 .PHONY: env-down
-env-down: undeploy-httpbin undeploy-registration undeploy-spire-agent undeploy-spire-server cluster-down clean
+env-down: undeploy-httpbin undeploy-registration undeploy-spire-csi undeploy-spire-agent undeploy-spire-server cluster-down clean
 	@echo "$(COLOR_BRIGHT_GREEN)[env-down]$(COLOR_RESET) $(COLOR_BOLD)Environment teardown complete!$(COLOR_RESET)"
 
 # Container image settings
