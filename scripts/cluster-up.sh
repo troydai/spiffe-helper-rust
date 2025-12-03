@@ -30,19 +30,5 @@ echo -e "${COLOR_CYAN}[cluster-up]${COLOR_RESET} Writing kubeconfig..."
 ${KIND} get kubeconfig --name "${KIND_CLUSTER_NAME}" > "${KUBECONFIG_PATH}"
 echo -e "${COLOR_GREEN}✓${COLOR_RESET} Kubeconfig written to ${COLOR_CYAN}${KUBECONFIG_PATH}${COLOR_RESET}"
 
-# Deploy httpbin service
-echo -e "${COLOR_CYAN}[cluster-up]${COLOR_RESET} Deploying httpbin service..."
-export KUBECONFIG="${KUBECONFIG_PATH}"
-if kubectl apply -f "${ROOT_DIR}/deploy/httpbin/httpbin.yaml" 2>/dev/null; then
-	echo -e "${COLOR_CYAN}[cluster-up]${COLOR_RESET} Waiting for httpbin pod to be ready..."
-	if kubectl wait --for=condition=ready pod -l app=httpbin -n httpbin --timeout=60s 2>/dev/null; then
-		echo -e "${COLOR_GREEN}✓${COLOR_RESET} httpbin pod is ready"
-	else
-		echo -e "${COLOR_YELLOW}[cluster-up]${COLOR_RESET} httpbin deployment may still be in progress"
-	fi
-else
-	echo -e "${COLOR_YELLOW}[cluster-up]${COLOR_RESET} Failed to deploy httpbin (may already exist)"
-fi
-
 echo ""
 echo -e "${COLOR_BRIGHT_GREEN}[cluster-up]${COLOR_RESET} ${COLOR_BOLD}Cluster setup complete!${COLOR_RESET}"
