@@ -76,18 +76,36 @@ async fn main() -> Result<()> {
 async fn run_once(config: config::Config) -> Result<()> {
     println!("Running spiffe-helper-rust in one-shot mode...");
 
-    // Ensure cert directory exists
-    if let Some(ref cert_dir) = config.cert_dir {
-        std::fs::create_dir_all(cert_dir)
-            .with_context(|| format!("Failed to create cert directory: {}", cert_dir))?;
-        println!("Cert directory ready: {}", cert_dir);
+    // Validate required configuration
+    if let (Some(ref agent_address), Some(ref cert_dir)) =
+        (config.agent_address.as_ref(), config.cert_dir.as_ref())
+    {
+        println!(
+            "Fetching X.509 certificate from SPIRE agent at {}...",
+            agent_address
+        );
+        let cert_dir_path = std::path::PathBuf::from(cert_dir);
+        if let Err(e) = workload_api::fetch_and_write_x509_svid(
+            agent_address,
+            &cert_dir_path,
+            config.svid_file_name.as_deref(),
+            config.svid_key_file_name.as_deref(),
+        )
+        .await
+        {
+            eprintln!("Failed to fetch X.509 certificate: {}", e);
+            std::process::exit(1);
+        }
+        println!(
+            "Successfully fetched and wrote X.509 certificate to {}",
+            cert_dir
+        );
+        println!("One-shot mode complete");
+        Ok(())
+    } else {
+        eprintln!("Error: agent_address and cert_dir must be configured for one-shot mode");
+        std::process::exit(1);
     }
-
-    // TODO: Implement actual certificate fetching from SPIRE Workload API
-    // For now, this is a placeholder that exits successfully
-    // The actual implementation will fetch X.509 SVIDs and JWT tokens from the SPIRE agent
-    println!("One-shot mode complete (certificate fetching not yet implemented)");
-    Ok(())
 }
 
 async fn run_daemon(config: config::Config) -> Result<()> {
