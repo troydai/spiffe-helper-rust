@@ -171,7 +171,6 @@ smoke-test: check-cluster
 .PHONY: env-up
 env-up: tools certs cluster-up deploy-spire-server deploy-spire-agent deploy-registration load-images
 	@echo "$(COLOR_BRIGHT_GREEN)[env-up]$(COLOR_RESET) $(COLOR_BOLD)Environment setup complete!$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)[env-up]$(COLOR_RESET) To deploy SPIRE CSI driver, run: $(COLOR_BOLD)make deploy-spire-csi$(COLOR_RESET)"
 
 .PHONY: env-down
 env-down: undeploy-registration undeploy-spire-agent undeploy-spire-server cluster-down clean
