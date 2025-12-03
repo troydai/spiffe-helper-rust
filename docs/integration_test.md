@@ -247,7 +247,9 @@ This target orchestrates:
 4. Deploys SPIRE server (`make deploy-spire-server`)
 5. Deploys SPIRE agents (`make deploy-spire-agent`)
 6. Deploys workload registrations (`make deploy-registration`)
-7. Loads container images into the kind cluster (`make load-images`)
+7. Builds and loads container images (`make load-images`)
+
+**Note**: This command may take a few minutes on the first run as it builds the Docker images (including compiling the Rust binary). Subsequent runs will be faster if the Docker cache is valid.
 
 ### Complete Environment Teardown (`make env-down`)
 
@@ -291,11 +293,10 @@ make load-helper-image
 ```
 
 This target:
-- Checks if the image `spiffe-helper-rust:test` exists locally
-- If found, loads it into the kind cluster using `kind load docker-image`
-- If not found, prints a warning and skips loading
+- Builds the `spiffe-helper-rust:test` image using `make build-helper-image`
+- Loads it into the kind cluster using `kind load docker-image`
 
-**Note**: You must build the helper image first if it doesn't exist. The image is used by workloads like httpbin that require the spiffe-helper-rust binary.
+**Note**: This target ensures the latest code is always built and loaded.
 
 ### Load Debug Image (`make load-debug-image`)
 
@@ -306,9 +307,8 @@ make load-debug-image
 ```
 
 This target:
-- Checks if the debug image `spiffe-debug:latest` exists locally
-- If not found, automatically builds it using `make build-debug-image`
-- Loads the image into the kind cluster
+- Builds the `spiffe-debug:latest` image using `make build-debug-image`
+- Loads it into the kind cluster
 
 The debug image is built from `Dockerfile.debug` and contains useful debugging tools for troubleshooting SPIRE workloads.
 
