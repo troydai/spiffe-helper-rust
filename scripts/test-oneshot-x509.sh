@@ -133,7 +133,7 @@ spec:
     - --config
     - /etc/spiffe-helper/helper.conf
     - --daemon-mode
-    - false
+    - "false"
     volumeMounts:
     - name: spiffe-socket
       mountPath: /run/spire/sockets
