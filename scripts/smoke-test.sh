@@ -149,17 +149,11 @@ else
 fi
 echo ""
 
-# Test 7: Verify one-shot mode creates certificates
-echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 7: One-Shot Certificate Creation${COLOR_RESET}"
-TEST_NAMESPACE="spiffe-helper-smoke-test"
-TEST_POD="spiffe-helper-oneshot-test"
+# Ensure node alias exists for one-shot test (shared resource)
 NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
-TEST_SPIFFE_ID="spiffe://spiffe-helper.local/ns/${TEST_NAMESPACE}/sa/test-sa"
-
-# Ensure node alias exists
 if ! kubectl exec -n spire-server "${SERVER_POD}" -- \
 	/opt/spire/bin/spire-server entry show -spiffeID "${NODE_ALIAS_ID}" 2>/dev/null | grep -q "${NODE_ALIAS_ID}"; then
-	echo -e "${COLOR_CYAN}  Creating node alias...${COLOR_RESET}"
+	echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} Creating node alias for tests...${COLOR_RESET}"
 	kubectl exec -n spire-server "${SERVER_POD}" -- \
 		/opt/spire/bin/spire-server entry create \
 		-node \
@@ -167,139 +161,15 @@ if ! kubectl exec -n spire-server "${SERVER_POD}" -- \
 		-selector "k8s_psat:cluster:spiffe-helper" > /dev/null 2>&1 || true
 fi
 
-# Create test namespace and service account
-kubectl create namespace "${TEST_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1 || true
-kubectl create serviceaccount test-sa -n "${TEST_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1 || true
-
-# Register the test workload with SPIRE
-if ! kubectl exec -n spire-server "${SERVER_POD}" -- \
-	/opt/spire/bin/spire-server entry show -spiffeID "${TEST_SPIFFE_ID}" 2>/dev/null | grep -q "${TEST_SPIFFE_ID}"; then
-	kubectl exec -n spire-server "${SERVER_POD}" -- \
-		/opt/spire/bin/spire-server entry create \
-		-spiffeID "${TEST_SPIFFE_ID}" \
-		-parentID "${NODE_ALIAS_ID}" \
-		-selector "k8s:ns:${TEST_NAMESPACE}" \
-		-selector "k8s:sa:test-sa" > /dev/null 2>&1 || true
-fi
-
-# Wait for registration to propagate
-sleep 3
-
-# Create ConfigMap with one-shot mode configuration
-kubectl create configmap spiffe-helper-oneshot-config -n "${TEST_NAMESPACE}" \
-	--from-literal=helper.conf='agent_address = "unix:///run/spire/sockets/agent.sock"
-daemon_mode = false
-cert_dir = "/tmp/certs"
-svid_file_name = "svid.pem"
-svid_key_file_name = "svid_key.pem"' \
-	--dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1 || true
-
-# Create test pod with initContainer running one-shot mode
-cat <<EOF | kubectl apply -f - > /dev/null 2>&1
-apiVersion: v1
-kind: Pod
-metadata:
-  name: ${TEST_POD}
-  namespace: ${TEST_NAMESPACE}
-  labels:
-    app: spiffe-helper-smoke-test
-spec:
-  serviceAccountName: test-sa
-  initContainers:
-  - name: spiffe-helper-oneshot
-    image: spiffe-helper-rust:test
-    imagePullPolicy: Never
-    args:
-    - /usr/local/bin/spiffe-helper-rust
-    - --config
-    - /etc/spiffe-helper/helper.conf
-    - --daemon-mode
-    - false
-    volumeMounts:
-    - name: spiffe-socket
-      mountPath: /run/spire/sockets
-      readOnly: true
-    - name: config
-      mountPath: /etc/spiffe-helper
-    - name: certs
-      mountPath: /tmp/certs
-  containers:
-  - name: sleep
-    image: busybox:latest
-    command: ["sleep", "3600"]
-    volumeMounts:
-    - name: certs
-      mountPath: /tmp/certs
-      readOnly: true
-  volumes:
-  - name: spiffe-socket
-    hostPath:
-      path: /run/spire/sockets
-      type: DirectoryOrCreate
-  - name: config
-    configMap:
-      name: spiffe-helper-oneshot-config
-  - name: certs
-    emptyDir: {}
-EOF
-
-# Wait for initContainer to complete
-echo -e "${COLOR_CYAN}  Waiting for one-shot mode to complete...${COLOR_RESET}"
-INIT_COMPLETED=false
-for i in {1..60}; do
-	INIT_READY=$(kubectl get pod -n "${TEST_NAMESPACE}" "${TEST_POD}" -o jsonpath='{.status.initContainerStatuses[0].ready}' 2>/dev/null || echo "false")
-	INIT_REASON=$(kubectl get pod -n "${TEST_NAMESPACE}" "${TEST_POD}" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || echo "")
-	
-	if [ "$INIT_READY" = "true" ] || [ "$INIT_REASON" = "Completed" ]; then
-		echo -e "${COLOR_GREEN}✓${COLOR_RESET} One-shot mode completed successfully"
-		INIT_COMPLETED=true
-		break
-	fi
-	
-	POD_STATUS=$(kubectl get pod -n "${TEST_NAMESPACE}" "${TEST_POD}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-	INIT_EXIT_CODE=$(kubectl get pod -n "${TEST_NAMESPACE}" "${TEST_POD}" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")
-	
-	if [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Error" ] || [ "$INIT_EXIT_CODE" = "1" ]; then
-		echo -e "${COLOR_RED}✗${COLOR_RESET} Pod failed with status: ${POD_STATUS}, exit code: ${INIT_EXIT_CODE}"
-		kubectl logs -n "${TEST_NAMESPACE}" "${TEST_POD}" -c spiffe-helper-oneshot 2>&1 | tail -20
-		TESTS_FAILED=$((TESTS_FAILED + 1))
-		# Cleanup
-		kubectl delete pod -n "${TEST_NAMESPACE}" "${TEST_POD}" > /dev/null 2>&1 || true
-		kubectl delete configmap -n "${TEST_NAMESPACE}" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-		exit 1
-	fi
-	
-	sleep 1
-done
-
-if [ "$INIT_COMPLETED" != "true" ]; then
-	echo -e "${COLOR_RED}✗${COLOR_RESET} InitContainer did not complete within 60 seconds"
-	kubectl logs -n "${TEST_NAMESPACE}" "${TEST_POD}" -c spiffe-helper-oneshot 2>&1 | tail -20
-	TESTS_FAILED=$((TESTS_FAILED + 1))
-	# Cleanup
-	kubectl delete pod -n "${TEST_NAMESPACE}" "${TEST_POD}" > /dev/null 2>&1 || true
-	kubectl delete configmap -n "${TEST_NAMESPACE}" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-	exit 1
-fi
-
-# Verify certificate files exist
-if kubectl exec -n "${TEST_NAMESPACE}" "${TEST_POD}" -c sleep -- test -f /tmp/certs/svid.pem 2>/dev/null && \
-   kubectl exec -n "${TEST_NAMESPACE}" "${TEST_POD}" -c sleep -- test -f /tmp/certs/svid_key.pem 2>/dev/null; then
-	echo -e "${COLOR_GREEN}✓${COLOR_RESET} Certificate files created (svid.pem and svid_key.pem)"
+# Test 7: Verify one-shot mode creates certificates
+echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 7: One-Shot Certificate Creation${COLOR_RESET}"
+if "${SCRIPT_DIR}/test-oneshot-x509.sh"; then
+	echo -e "${COLOR_GREEN}✓${COLOR_RESET} One-shot mode certificate creation test passed"
 	TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-	echo -e "${COLOR_RED}✗${COLOR_RESET} Certificate files not found"
-	kubectl logs -n "${TEST_NAMESPACE}" "${TEST_POD}" -c spiffe-helper-oneshot 2>&1 | tail -20
+	echo -e "${COLOR_RED}✗${COLOR_RESET} One-shot mode certificate creation test failed"
 	TESTS_FAILED=$((TESTS_FAILED + 1))
-	# Cleanup
-	kubectl delete pod -n "${TEST_NAMESPACE}" "${TEST_POD}" > /dev/null 2>&1 || true
-	kubectl delete configmap -n "${TEST_NAMESPACE}" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-	exit 1
 fi
-
-# Cleanup
-kubectl delete pod -n "${TEST_NAMESPACE}" "${TEST_POD}" > /dev/null 2>&1 || true
-kubectl delete configmap -n "${TEST_NAMESPACE}" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
 echo ""
 
 # Summary
