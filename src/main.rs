@@ -89,8 +89,20 @@ async fn run_once(config: config::Config) -> Result<()> {
     Ok(())
 }
 
-/// Fetches X.509 certificate from SPIRE agent and writes it to the configured directory.
-/// This is a common function used by both one-shot and daemon modes.
+/// Fetches the initial X.509 SVID from the SPIRE agent and writes it to the configured directory.
+///
+/// This function validates the configuration (agent_address and cert_dir) and calls
+/// `workload_api::fetch_and_write_x509_svid` to perform the actual fetch and write operation.
+/// It implements the shared initial SVID fetch policy used by both daemon and one-shot modes,
+/// including retry logic and backoff handling.
+///
+/// # Arguments
+///
+/// * `config` - The configuration containing agent address, cert directory, and file names
+///
+/// # Returns
+///
+/// Returns `Ok(())` if successful, or an error if configuration is invalid or fetching fails.
 async fn fetch_x509_certificate(config: &config::Config) -> Result<()> {
     let agent_address = config
         .agent_address
@@ -124,7 +136,7 @@ async fn fetch_x509_certificate(config: &config::Config) -> Result<()> {
 async fn run_daemon(config: config::Config) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
 
-    // Fetch X.509 certificate and key at startup
+    // Fetch initial X.509 SVID at startup
     // This ensures certificates are available before the daemon continues
     fetch_x509_certificate(&config).await?;
 
@@ -209,6 +221,64 @@ async fn readiness_handler() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_x509_certificate_missing_agent_address() {
+        let config = config::Config {
+            agent_address: None,
+            cert_dir: Some("/tmp/certs".to_string()),
+            svid_file_name: None,
+            svid_key_file_name: None,
+            ..Default::default()
+        };
+
+        let result = fetch_x509_certificate(&config).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("agent_address must be configured"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_x509_certificate_missing_cert_dir() {
+        let config = config::Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: None,
+            svid_file_name: None,
+            svid_key_file_name: None,
+            ..Default::default()
+        };
+
+        let result = fetch_x509_certificate(&config).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("cert_dir must be configured"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_x509_certificate_with_custom_file_names() {
+        // This test verifies that custom file names are passed through correctly
+        // We can't easily test the full flow without a SPIRE agent, but we can
+        // verify the configuration validation works with custom file names
+        let config = config::Config {
+            agent_address: Some("unix:///tmp/nonexistent-agent.sock".to_string()),
+            cert_dir: Some("/tmp/certs".to_string()),
+            svid_file_name: Some("custom_cert.pem".to_string()),
+            svid_key_file_name: Some("custom_key.pem".to_string()),
+            ..Default::default()
+        };
+
+        // This will fail when trying to connect to the agent, but that's expected
+        // The important part is that it validates config correctly first
+        let result = fetch_x509_certificate(&config).await;
+        assert!(result.is_err());
+        // Should fail on connection, not on config validation
+        let error_msg = result.unwrap_err().to_string();
+        // Should not be a config validation error
+        assert!(!error_msg.contains("agent_address must be configured"));
+        assert!(!error_msg.contains("cert_dir must be configured"));
+    }
+
     #[test]
     fn test_greeting_logic() {
         // Mock test to ensure coverage data is generated

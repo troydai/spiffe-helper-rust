@@ -17,7 +17,7 @@ pub struct JwtSvid {
     pub jwt_svid_file_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub agent_address: Option<String>,
     pub cmd: Option<String>,
