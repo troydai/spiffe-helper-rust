@@ -64,21 +64,13 @@ async fn main() -> Result<()> {
 
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
-    let result = if !daemon_mode {
+    if !daemon_mode {
         // Non-daemon mode - fetch certificates once and exit
         run_once(config).await
     } else {
         // Run daemon mode
         run_daemon(config).await
-    };
-
-    // Handle errors and exit with appropriate code
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
     }
-
-    Ok(())
 }
 
 async fn run_once(config: config::Config) -> Result<()> {
@@ -142,7 +134,7 @@ async fn run_daemon(config: config::Config) -> Result<()> {
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
-    let health_server_handle = if let Some(ref health_checks) = health_checks {
+    let mut health_server_handle = if let Some(ref health_checks) = health_checks {
         if health_checks.listener_enabled {
             let bind_addr = format!("0.0.0.0:{}", health_checks.bind_port);
             let liveness_path = health_checks
@@ -169,7 +161,7 @@ async fn run_daemon(config: config::Config) -> Result<()> {
             Some(tokio::spawn(async move {
                 axum::serve(listener, app)
                     .await
-                    .expect("Health check server failed");
+                    .context("Health check server failed")
             }))
         } else {
             None
@@ -189,26 +181,51 @@ async fn run_daemon(config: config::Config) -> Result<()> {
     println!("Daemon running. Waiting for SIGTERM to shutdown...");
 
     // Main daemon loop
-    loop {
+    let result = loop {
         tokio::select! {
             _ = sigterm.recv() => {
                 println!("Received SIGTERM, shutting down gracefully...");
-                break;
+                break Ok(());
             }
             _ = liveness_interval.tick() => {
                 println!("spiffe-helper-rust daemon is alive");
             }
+            // If health server is running, watch for its completion (which indicates failure)
+            Some(res) = async {
+                match &mut health_server_handle {
+                    Some(handle) => Some(handle.await),
+                    None => std::future::pending().await,
+                }
+            } => {
+                match res {
+                    Ok(Ok(())) => {
+                        // Server exited cleanly (shouldn't happen normally)
+                        println!("Health check server exited unexpectedly");
+                        break Ok(());
+                    }
+                    Ok(Err(e)) => {
+                        // Server returned an error
+                        break Err(e);
+                    }
+                    Err(e) => {
+                        // Task panicked or was cancelled
+                        break Err(anyhow::anyhow!("Health check server task failed: {}", e));
+                    }
+                }
+            }
+        }
+    };
+
+    // Shutdown health check server if it was started and still running
+    if let Some(ref handle) = health_server_handle {
+        if !handle.is_finished() {
+            handle.abort();
+            println!("Health check server stopped");
         }
     }
 
-    // Shutdown health check server if it was started
-    if let Some(handle) = health_server_handle {
-        handle.abort();
-        println!("Health check server stopped");
-    }
-
     println!("Daemon shutdown complete");
-    Ok(())
+    result
 }
 
 async fn liveness_handler() -> impl IntoResponse {
