@@ -24,6 +24,12 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 # Build Docker image
 make build-helper-image
+
+# Pre-commit hooks (install once)
+pre-commit install
+
+# Run pre-commit manually on all files
+pre-commit run --all-files
 ```
 
 ## Integration Testing
