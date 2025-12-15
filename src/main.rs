@@ -21,13 +21,22 @@ enum DaemonModeFlag {
 /// SPIFFE Helper - A utility for fetching X.509 SVID certificates from the SPIFFE Workload API
 #[derive(Parser, Debug)]
 #[command(name = "spiffe-helper-rust")]
-#[command(about = "SPIFFE Helper - Fetch and manage X.509 SVID certificates", long_about = None)]
+#[command(about = "SPIFFE Helper - Fetch and manage X.509 SVID certificates")]
+#[command(
+    long_about = "SPIFFE Helper fetches X.509 SVID certificates from the SPIRE agent.\n\n\
+    Modes:\n  \
+    - Daemon mode (default): Runs continuously, fetches certificates at startup,\n    \
+      serves health check endpoints, and waits for SIGTERM to shutdown.\n  \
+    - One-shot mode: Fetches certificates once and exits immediately.\n    \
+      Useful for Kubernetes initContainers."
+)]
 struct Args {
     /// Path to the configuration file
     #[arg(short, long, default_value = DEFAULT_CONFIG_FILE)]
     config: String,
 
-    /// Boolean true or false. Overrides daemon_mode in the config file.
+    /// Set operation mode. When 'true' (default), runs as a daemon. When 'false',
+    /// fetches certificates once and exits (one-shot mode for initContainers).
     #[arg(long, value_enum)]
     daemon_mode: Option<DaemonModeFlag>,
 
@@ -64,6 +73,10 @@ async fn main() -> Result<()> {
 
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
+
+    // Validate required configuration fields early
+    validate_config(&config, daemon_mode)?;
+
     if !daemon_mode {
         // Non-daemon mode - fetch certificates once and exit
         run_once(config).await
@@ -71,6 +84,41 @@ async fn main() -> Result<()> {
         // Run daemon mode
         run_daemon(config).await
     }
+}
+
+/// Validates required configuration fields based on the operation mode.
+///
+/// Both daemon and one-shot modes require `agent_address` and `cert_dir` to be configured
+/// for X.509 certificate fetching.
+///
+/// # Arguments
+///
+/// * `config` - The configuration to validate
+/// * `daemon_mode` - Whether running in daemon mode (true) or one-shot mode (false)
+///
+/// # Returns
+///
+/// Returns `Ok(())` if validation passes, or an error with a descriptive message.
+fn validate_config(config: &config::Config, daemon_mode: bool) -> Result<()> {
+    let mode_name = if daemon_mode { "daemon" } else { "one-shot" };
+
+    if config.agent_address.is_none() {
+        anyhow::bail!(
+            "agent_address must be configured for {} mode.\n\
+             Set it in your config file: agent_address = \"unix:///run/spire/sockets/agent.sock\"",
+            mode_name
+        );
+    }
+
+    if config.cert_dir.is_none() {
+        anyhow::bail!(
+            "cert_dir must be configured for {} mode.\n\
+             Set it in your config file: cert_dir = \"/path/to/certs\"",
+            mode_name
+        );
+    }
+
+    Ok(())
 }
 
 async fn run_once(config: config::Config) -> Result<()> {
@@ -297,23 +345,75 @@ mod tests {
     }
 
     #[test]
-    fn test_greeting_logic() {
-        // Mock test to ensure coverage data is generated
-        // Test the greeting logic used in main()
-        let name = Some("Rust".to_string());
-        let greeting_name = name.as_deref().unwrap_or("World");
-        assert_eq!(greeting_name, "Rust");
+    fn test_validate_config_missing_agent_address_daemon_mode() {
+        let config = config::Config {
+            agent_address: None,
+            cert_dir: Some("/tmp/certs".to_string()),
+            ..Default::default()
+        };
 
-        let no_name: Option<String> = None;
-        let default_name = no_name.as_deref().unwrap_or("World");
-        assert_eq!(default_name, "World");
+        let result = validate_config(&config, true);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("agent_address must be configured"));
+        assert!(error_msg.contains("daemon mode"));
     }
 
     #[test]
-    fn test_coverage_helper() {
-        // Additional test to generate coverage data
-        let count: u8 = 3;
-        assert!(count > 0);
-        assert_eq!(count, 3);
+    fn test_validate_config_missing_agent_address_oneshot_mode() {
+        let config = config::Config {
+            agent_address: None,
+            cert_dir: Some("/tmp/certs".to_string()),
+            ..Default::default()
+        };
+
+        let result = validate_config(&config, false);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("agent_address must be configured"));
+        assert!(error_msg.contains("one-shot mode"));
+    }
+
+    #[test]
+    fn test_validate_config_missing_cert_dir_daemon_mode() {
+        let config = config::Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: None,
+            ..Default::default()
+        };
+
+        let result = validate_config(&config, true);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("cert_dir must be configured"));
+        assert!(error_msg.contains("daemon mode"));
+    }
+
+    #[test]
+    fn test_validate_config_missing_cert_dir_oneshot_mode() {
+        let config = config::Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: None,
+            ..Default::default()
+        };
+
+        let result = validate_config(&config, false);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("cert_dir must be configured"));
+        assert!(error_msg.contains("one-shot mode"));
+    }
+
+    #[test]
+    fn test_validate_config_valid_config() {
+        let config = config::Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: Some("/tmp/certs".to_string()),
+            ..Default::default()
+        };
+
+        // Should pass for both modes
+        assert!(validate_config(&config, true).is_ok());
+        assert!(validate_config(&config, false).is_ok());
     }
 }
