@@ -301,7 +301,7 @@ mod tests {
 
     fn parse_hcl_simple_value(hcl_str: &str) -> hcl::Value {
         // For simple values, wrap in a key-value pair and extract the value
-        let wrapped = format!("key = {}", hcl_str);
+        let wrapped = format!("key = {hcl_str}");
         let value = parse_hcl_value(&wrapped);
         if let hcl::Value::Object(obj) = value {
             obj.get("key").cloned().expect("key not found")
@@ -331,7 +331,7 @@ mod tests {
         let result = extract_string(&value).unwrap();
 
         // Assert
-        assert_eq!(result, Some("".to_string()));
+        assert_eq!(result, Some(String::new()));
     }
 
     #[test]
@@ -794,9 +794,9 @@ mod tests {
     #[test]
     fn test_extract_health_checks_disabled() {
         // Arrange
-        let hcl_str = r#"
+        let hcl_str = r"
             listener_enabled = false
-        "#;
+        ";
         let value = parse_hcl_value(hcl_str);
 
         // Act
@@ -843,10 +843,10 @@ mod tests {
     #[test]
     fn test_extract_health_checks_partial() {
         // Arrange
-        let hcl_str = r#"
+        let hcl_str = r"
             listener_enabled = true
             bind_port = 3000
-        "#;
+        ";
         let value = parse_hcl_value(hcl_str);
 
         // Act
@@ -864,8 +864,8 @@ mod tests {
     #[test]
     fn test_extract_health_checks_defaults() {
         // Arrange
-        let hcl_str = r#"
-        "#;
+        let hcl_str = r"
+        ";
         let value = parse_hcl_value(hcl_str);
 
         // Act
@@ -883,10 +883,10 @@ mod tests {
     #[test]
     fn test_extract_health_checks_invalid_port() {
         // Arrange
-        let hcl_str = r#"
+        let hcl_str = r"
             listener_enabled = true
             bind_port = 65536
-        "#;
+        ";
         let value = parse_hcl_value(hcl_str);
 
         // Act
@@ -954,8 +954,8 @@ mod tests {
     #[test]
     fn test_parse_hcl_value_to_config_empty() {
         // Arrange
-        let hcl_str = r#"
-        "#;
+        let hcl_str = r"
+        ";
         let value = parse_hcl_value(hcl_str);
 
         // Act
