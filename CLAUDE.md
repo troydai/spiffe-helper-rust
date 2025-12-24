@@ -19,6 +19,13 @@ cargo test
 cargo test <test_name>
 
 # Lint
+make lint                 # Run all lints (fmt + clippy)
+make fmt                  # Check code formatting
+make fmt-fix              # Auto-format code
+make clippy               # Run clippy with default lints
+make clippy-pedantic      # Run clippy with pedantic lints
+
+# Or run directly with cargo:
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 
@@ -98,7 +105,7 @@ When asked to work on a specific GitHub issue, follow this sequence:
 3. **Execute the plan**
    - Implement the changes
    - Run tests: `cargo test`
-   - Run lints: `cargo fmt --all --check && cargo clippy --all-targets --all-features -- -D warnings`
+   - Run lints: `make lint` (or `cargo fmt --all --check && cargo clippy --all-targets --all-features -- -D warnings`)
 
 4. **Create PR**
    - Commit changes with descriptive message

@@ -51,6 +51,35 @@ endif
 tools:
 	@$(TOOLS_SCRIPT)
 
+# Linting targets
+.PHONY: fmt
+fmt:
+	@echo "$(COLOR_CYAN)[fmt]$(COLOR_RESET) Checking code formatting..."
+	@cargo fmt --all --check
+	@echo "$(COLOR_GREEN)[fmt]$(COLOR_RESET) Code formatting check passed!"
+
+.PHONY: fmt-fix
+fmt-fix:
+	@echo "$(COLOR_CYAN)[fmt-fix]$(COLOR_RESET) Formatting code..."
+	@cargo fmt --all
+	@echo "$(COLOR_GREEN)[fmt-fix]$(COLOR_RESET) Code formatted successfully!"
+
+.PHONY: clippy
+clippy:
+	@echo "$(COLOR_CYAN)[clippy]$(COLOR_RESET) Running clippy lints..."
+	@cargo clippy --all-targets --all-features -- -D warnings
+	@echo "$(COLOR_GREEN)[clippy]$(COLOR_RESET) Clippy checks passed!"
+
+.PHONY: clippy-pedantic
+clippy-pedantic:
+	@echo "$(COLOR_CYAN)[clippy-pedantic]$(COLOR_RESET) Running clippy with pedantic lints..."
+	@cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
+	@echo "$(COLOR_GREEN)[clippy-pedantic]$(COLOR_RESET) Clippy pedantic checks passed!"
+
+.PHONY: lint
+lint: fmt clippy
+	@echo "$(COLOR_BRIGHT_GREEN)[lint]$(COLOR_RESET) $(COLOR_BOLD)All lints passed!$(COLOR_RESET)"
+
 .PHONY: certs
 certs:
 	@$(CERT_SCRIPT)

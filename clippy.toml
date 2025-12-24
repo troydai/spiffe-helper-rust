@@ -1,0 +1,67 @@
+# Clippy configuration for spiffe-helper-rust
+# See https://doc.rust-lang.org/clippy/lint_configuration.html for available options
+
+# Warn on all clippy::pedantic lints by default
+# These are explicitly enabled in CI with: cargo clippy -- -W clippy::pedantic
+
+# Maximum allowed cyclomatic complexity for a function
+cognitive-complexity-threshold = 15
+
+# Maximum lines in a function signature
+max-fn-params-bools = 3
+
+# Allowed names for single-character variables
+single-char-binding-names-threshold = 4
+
+# Maximum struct field count before triggering too_many_arguments
+# or similar lints
+max-struct-bools = 3
+
+# Type complexity threshold - warns on overly complex types
+type-complexity-threshold = 250
+
+# Maximum allowed nesting level
+excessive-nesting-threshold = 3
+
+# Suppress false positives for common abbreviations
+allowed-dotfiles = [".github", ".cargo"]
+
+# Allow TODO and FIXME comments (disable todo/fixme warnings)
+# Set to true if you want to allow these in development
+# allow-dbg-in-tests = true
+# allow-print-in-tests = true
+
+# Documentation settings
+missing-docs-in-crate-items = false
+
+# Allow expect and unwrap in tests
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
+
+# Arithmetic overflow checks
+arithmetic-side-effects-allowed = []
+
+# Common abbreviations that should not trigger doc-markdown warnings
+doc-valid-idents = [
+    "SPIFFE",
+    "SPIRE",
+    "JWT",
+    "X509",
+    "SVID",
+    "TLS",
+    "gRPC",
+    "API",
+    "HTTP",
+    "URI",
+    "URL",
+    "PEM",
+    "DER",
+    "JSON",
+    "HCL",
+    "CSI",
+    "SIGTERM",
+]
+
+# Allow module inception (module with same name as file)
+# This is common in Rust and often intentional
+allow-mixed-uninlined-format-args = true
