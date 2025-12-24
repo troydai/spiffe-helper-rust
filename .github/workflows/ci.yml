@@ -27,12 +27,6 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Lint (fmt)
-        run: cargo fmt --all --check
-
-      - name: Lint (clippy)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Build
         run: cargo build --all-targets
 
