@@ -1,0 +1,97 @@
+use anyhow::{Context, Result};
+use std::path::PathBuf;
+
+use crate::config::Config;
+use crate::workload_api;
+
+/// Fetches the initial X.509 SVID from the SPIRE agent and writes it to the configured directory.
+///
+/// This function validates the configuration (`agent_address` and `cert_dir`) and calls
+/// `workload_api::fetch_and_write_x509_svid` to perform the actual fetch and write operation.
+/// It implements the shared initial SVID fetch policy used by both daemon and one-shot modes,
+/// including retry logic and backoff handling.
+///
+/// # Arguments
+///
+/// * `config` - The configuration containing agent address, cert directory, and file names
+///
+/// # Returns
+///
+/// Returns `Ok(())` if successful, or an error if configuration is invalid or fetching fails.
+pub async fn fetch_x509_certificate(config: &Config) -> Result<()> {
+    let agent_address = config
+        .agent_address
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))?;
+    let cert_dir = config
+        .cert_dir
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
+
+    println!("Fetching X.509 certificate from SPIRE agent at {agent_address}...");
+    let cert_dir_path = PathBuf::from(cert_dir);
+    workload_api::fetch_and_write_x509_svid(
+        agent_address,
+        &cert_dir_path,
+        config.svid_file_name.as_deref(),
+        config.svid_key_file_name.as_deref(),
+    )
+    .await
+    .with_context(|| "Failed to fetch X.509 certificate")?;
+    println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_x509_certificate_missing_agent_address() {
+        let config = Config {
+            agent_address: None,
+            cert_dir: Some("/tmp/certs".to_string()),
+            svid_file_name: None,
+            svid_key_file_name: None,
+            ..Default::default()
+        };
+
+        let result = fetch_x509_certificate(&config).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("agent_address must be configured"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_x509_certificate_missing_cert_dir() {
+        let config = Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: None,
+            svid_file_name: None,
+            svid_key_file_name: None,
+            ..Default::default()
+        };
+
+        let result = fetch_x509_certificate(&config).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("cert_dir must be configured"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_x509_certificate_with_custom_file_names() {
+        let config = Config {
+            agent_address: Some("unix:///tmp/nonexistent-agent.sock".to_string()),
+            cert_dir: Some("/tmp/certs".to_string()),
+            svid_file_name: Some("custom_cert.pem".to_string()),
+            svid_key_file_name: Some("custom_key.pem".to_string()),
+            ..Default::default()
+        };
+
+        let result = fetch_x509_certificate(&config).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(!error_msg.contains("agent_address must be configured"));
+        assert!(!error_msg.contains("cert_dir must be configured"));
+    }
+}
