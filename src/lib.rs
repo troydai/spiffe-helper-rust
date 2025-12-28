@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod daemon;
 pub mod health;
+pub mod jwt;
 pub mod oneshot;
 pub mod process;
 pub mod signal;
