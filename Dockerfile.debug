@@ -15,11 +15,21 @@ RUN apt-get update && \
     gzip && \
     rm -rf /var/lib/apt/lists/*
 
-# Install SPIRE Agent
+# Install SPIRE Agent with multi-arch support
 ARG SPIRE_VERSION=1.13.0
-RUN curl -s -L "https://github.com/spiffe/spire/releases/download/v${SPIRE_VERSION}/spire-${SPIRE_VERSION}-linux-arm64-musl.tar.gz" | tar -xz \
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# Map Docker's TARGETARCH to SPIRE's architecture naming
+# amd64 -> amd64, arm64 -> arm64, arm/v7 -> arm
+RUN SPIRE_ARCH=${TARGETARCH}; \
+    if [ "${TARGETARCH}" = "arm" ]; then \
+        SPIRE_ARCH="arm"; \
+    fi; \
+    echo "Building for architecture: ${TARGETARCH}${TARGETVARIANT}, SPIRE arch: ${SPIRE_ARCH}"; \
+    curl -s -L "https://github.com/spiffe/spire/releases/download/v${SPIRE_VERSION}/spire-${SPIRE_VERSION}-linux-${SPIRE_ARCH}-musl.tar.gz" | tar -xz \
     && find . -name "spire-agent" -type f -executable -exec cp {} /usr/local/bin/ \; \
-    && rm -rf spire-${SPIRE_VERSION}-linux-arm64-musl
+    && rm -rf spire-${SPIRE_VERSION}-linux-${SPIRE_ARCH}-musl
 
 WORKDIR /root
 CMD ["sleep", "infinity"]
