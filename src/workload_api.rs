@@ -54,6 +54,8 @@ pub async fn fetch_and_write_x509_svid(
     .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 SVID from SPIRE agent: {e}"))?;
 
     // Determine file paths
+    // Default file names are now handled in the config module, but we keep this as a fallback
+    // if called directly with None
     let cert_file_name = svid_file_name.unwrap_or("svid.pem");
     let key_file_name = svid_key_file_name.unwrap_or("svid_key.pem");
     let cert_path = cert_dir.join(cert_file_name);
