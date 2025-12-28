@@ -52,7 +52,9 @@ jobs:
           tags: spiffe-helper-rust:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          # Build multi-arch only on main branch to save CI time
+          # PRs validate with amd64 only for faster feedback
+          platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
 
   smoke-test:
     runs-on: ubuntu-latest
