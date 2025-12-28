@@ -42,6 +42,16 @@ pub struct Config {
     pub health_checks: Option<HealthChecks>,
 }
 
+impl Config {
+    pub fn svid_file_name(&self) -> &str {
+        self.svid_file_name.as_deref().unwrap_or("svid.pem")
+    }
+
+    pub fn svid_key_file_name(&self) -> &str {
+        self.svid_key_file_name.as_deref().unwrap_or("svid_key.pem")
+    }
+}
+
 pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config file: {}", path.display()))?;
@@ -1121,5 +1131,21 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a number"));
+    }
+
+    #[test]
+    fn test_config_svid_file_name_accessors() {
+        let mut config = Config::default();
+
+        // Test defaults (since Default trait doesn't set defaults in fields automatically, we check behavior with None)
+        assert_eq!(config.svid_file_name(), "svid.pem");
+        assert_eq!(config.svid_key_file_name(), "svid_key.pem");
+
+        // Test with explicit values
+        config.svid_file_name = Some("custom.pem".to_string());
+        config.svid_key_file_name = Some("custom_key.pem".to_string());
+
+        assert_eq!(config.svid_file_name(), "custom.pem");
+        assert_eq!(config.svid_key_file_name(), "custom_key.pem");
     }
 }
