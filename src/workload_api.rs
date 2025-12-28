@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use spiffe::workload_api::client::WorkloadApiClient;
+use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Fetches X.509 SVID (certificate and key) from the SPIRE agent
 /// and writes them to the specified directory.
@@ -119,4 +121,127 @@ pub async fn fetch_and_write_x509_svid(
         .with_context(|| format!("Failed to write private key to {}", key_path.display()))?;
 
     Ok(())
+}
+
+/// Creates an X509Source for continuous X.509 certificate watching.
+///
+/// This function creates an X509Source that automatically watches for certificate updates
+/// from the SPIRE agent. It includes retry logic with exponential backoff for initial connection.
+///
+/// # Arguments
+///
+/// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
+///
+/// # Returns
+///
+/// Returns `Ok(Arc<X509Source>)` if successful, or an error if connection fails after retries.
+pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
+    // Convert agent_address to the format expected by spiffe crate
+    let spiffe_path = if agent_address.starts_with("unix://") {
+        let socket_path = agent_address
+            .strip_prefix("unix://")
+            .ok_or_else(|| anyhow::anyhow!("Invalid unix socket address: {agent_address}"))?;
+        // Use unix: prefix (not unix://) for spiffe crate
+        format!("unix:{socket_path}")
+    } else {
+        agent_address.to_string()
+    };
+
+    // Create X509Source with retries (workload may need time to attest)
+    let mut last_error_msg = None;
+    for attempt in 1..=10 {
+        // First create a WorkloadApiClient
+        let client_result = WorkloadApiClient::new_from_path(&spiffe_path).await;
+        match client_result {
+            Ok(client) => {
+                // Create X509Source from the client using builder
+                match X509SourceBuilder::new().with_client(client).build().await {
+                    Ok(source) => {
+                        if attempt > 1 {
+                            eprintln!("Successfully created X509Source after {attempt} attempts");
+                        }
+                        return Ok(source);
+                    }
+                    Err(e) => {
+                        let error_str = format!("{e:?}");
+                        last_error_msg = Some(format!("{e} ({error_str})"));
+                        // If it's a permission denied error, the workload may still be attesting
+                        if error_str.contains("PermissionDenied") && attempt < 10 {
+                            // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s, 16s, etc., max 16s)
+                            let delay = std::cmp::min(1u64 << (attempt - 1), 16);
+                            eprintln!(
+                                "Attempt {attempt} failed (PermissionDenied), retrying in {delay}s..."
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+                            continue;
+                        }
+                        // For other errors or last attempt, continue to return error
+                    }
+                }
+            }
+            Err(e) => {
+                let error_str = format!("{e:?}");
+                last_error_msg = Some(format!("{e} ({error_str})"));
+                // If it's a permission denied error, the workload may still be attesting
+                if error_str.contains("PermissionDenied") && attempt < 10 {
+                    // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s, 16s, etc., max 16s)
+                    let delay = std::cmp::min(1u64 << (attempt - 1), 16);
+                    eprintln!(
+                        "Attempt {attempt} failed (PermissionDenied), retrying in {delay}s..."
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+                    continue;
+                }
+                // For other errors or last attempt, continue to return error
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Failed to create X509Source from SPIRE agent after 10 attempts: {}",
+        last_error_msg.unwrap_or_else(|| "unknown error".to_string())
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_x509_source_invalid_unix_address() {
+        // Test with invalid unix:// address format (empty path)
+        // This will try to connect to "unix:" which should fail quickly
+        let result = create_x509_source("unix://").await;
+        assert!(result.is_err());
+        // Should fail on connection, not hang forever
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("Failed to create X509Source"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_x509_source_nonexistent_socket() {
+        // Test with non-existent socket (should fail after retries)
+        let result = create_x509_source("unix:///tmp/nonexistent-socket-12345.sock").await;
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("Failed to create X509Source"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_x509_source_unix_format_conversion() {
+        // Test that unix:// format is converted correctly
+        // This will fail to connect but should not fail on address parsing
+        let result = create_x509_source("unix:///tmp/test.sock").await;
+        // Should fail on connection, not on parsing
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            // Should not contain "Invalid unix socket address"
+            assert!(!error_msg.contains("Invalid unix socket address"));
+        }
+    }
 }
