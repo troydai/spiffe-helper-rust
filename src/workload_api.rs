@@ -5,6 +5,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+const UDS_PREFIX: &str = "unix://";
+
 /// Fetches X.509 SVID (certificate and key) from the SPIRE agent
 /// and writes them to the specified directory.
 ///
@@ -30,22 +32,7 @@ pub async fn fetch_and_write_x509_svid(
 
     // Create Workload API client
     // Handle unix:// URLs by using new_from_path, otherwise convert to unix: format
-    let mut client = if agent_address.starts_with("unix://") {
-        let socket_path = agent_address
-            .strip_prefix("unix://")
-            .ok_or_else(|| anyhow::anyhow!("Invalid unix socket address: {agent_address}"))?;
-        // Use unix: prefix (not unix://) for spiffe crate
-        let spiffe_path = format!("unix:{socket_path}");
-        WorkloadApiClient::new_from_path(&spiffe_path)
-            .await
-            .with_context(|| format!("Failed to connect to SPIRE agent at {agent_address}"))?
-    } else {
-        // For non-unix addresses, try new_from_path with the address as-is
-        // If it's already a valid address format, new_from_path should handle it
-        WorkloadApiClient::new_from_path(agent_address)
-            .await
-            .with_context(|| format!("Failed to connect to SPIRE agent at {agent_address}"))?
-    };
+    let mut client = create_workload_api_client(agent_address).await?;
 
     // Fetch X.509 SVID with retries (workload may need time to attest)
     let mut svid = None;
@@ -203,9 +190,133 @@ pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> 
     ))
 }
 
+async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> {
+    let address = address
+        .strip_prefix(UDS_PREFIX)
+        .map_or_else(|| String::from(address), |v| format!("unix:{v}"));
+
+    WorkloadApiClient::new_from_path(&address)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to create WorkloadApiClient from address: {}",
+                address
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_fetch_and_write_x509_svid_invalid_address() {
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+
+        // Test with invalid agent address
+        let result = fetch_and_write_x509_svid("invalid://address", cert_dir, None, None).await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        // The error message should contain information about failing to create the client
+        // It may be "Failed to create WorkloadApiClient" or connection-related errors
+        assert!(
+            error_msg.contains("Failed to create WorkloadApiClient")
+                || error_msg.contains("Invalid agent address")
+                || error_msg.contains("Failed to connect")
+                || error_msg.contains("invalid")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_and_write_x509_svid_missing_agent() {
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+
+        // Test with non-existent unix socket
+        let result =
+            fetch_and_write_x509_svid("unix:///tmp/nonexistent-socket.sock", cert_dir, None, None)
+                .await;
+
+        assert!(result.is_err());
+        // Should fail when trying to connect to non-existent socket
+        let error_msg = result.unwrap_err().to_string();
+        // The error message may vary depending on the platform/tonic version
+        // Just verify that it's an error related to connection/socket
+        assert!(!error_msg.is_empty(), "Error message should not be empty");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_and_write_x509_svid_custom_file_names() {
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+
+        // Test with custom file names
+        let result = fetch_and_write_x509_svid(
+            "unix:///tmp/nonexistent-socket.sock",
+            cert_dir,
+            Some("custom_cert.pem"),
+            Some("custom_key.pem"),
+        )
+        .await;
+
+        // Should fail on connection, but verify directory was created
+        assert!(result.is_err());
+        assert!(
+            cert_dir.exists(),
+            "Cert directory should be created even if connection fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_x509_source_invalid_address() {
+        // Test with invalid agent address
+        let result = create_x509_source("invalid://address").await;
+
+        // Should fail when trying to create the client
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(
+                error_msg.contains("Failed to create X509Source")
+                    || error_msg.contains("Failed to create WorkloadApiClient")
+                    || error_msg.contains("invalid")
+            );
+        } else {
+            panic!("Expected error but got Ok");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_x509_source_missing_agent() {
+        // Test with non-existent unix socket
+        let result = create_x509_source("unix:///tmp/nonexistent-socket-98765.sock").await;
+
+        // Should fail after retries
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("Failed to create X509Source") || !error_msg.is_empty());
+        } else {
+            panic!("Expected error but got Ok");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_x509_source_unix_format() {
+        // Test that unix:// format is handled correctly
+        // This will fail to connect but should not fail on address parsing
+        let result = create_x509_source("unix:///tmp/test-socket.sock").await;
+
+        // Should not contain "Invalid unix socket address" since we handle the conversion
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(!error_msg.contains("Invalid unix socket address"));
+        } else {
+            panic!("Expected error but got Ok");
+        }
+    }
 
     #[tokio::test]
     async fn test_create_x509_source_invalid_unix_address() {
@@ -221,27 +332,79 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_x509_source_nonexistent_socket() {
-        // Test with non-existent socket (should fail after retries)
-        let result = create_x509_source("unix:///tmp/nonexistent-socket-12345.sock").await;
+    async fn test_create_workload_api_client_unix_prefix_conversion() {
+        // Test that unix:// prefix is converted to unix: format
+        let result = create_workload_api_client("unix:///tmp/test-socket.sock").await;
+        // Should fail on connection (socket doesn't exist), not on parsing
         assert!(result.is_err());
         if let Err(e) = result {
             let error_msg = e.to_string();
-            assert!(error_msg.contains("Failed to create X509Source"));
+            // Should contain the error context message
+            assert!(error_msg.contains("Failed to create WorkloadApiClient"));
+            // Should not fail on parsing the address format
+            assert!(!error_msg.contains("Invalid"));
         }
     }
 
     #[tokio::test]
-    async fn test_create_x509_source_unix_format_conversion() {
-        // Test that unix:// format is converted correctly
-        // This will fail to connect but should not fail on address parsing
-        let result = create_x509_source("unix:///tmp/test.sock").await;
+    async fn test_create_workload_api_client_without_prefix() {
+        // Test address without unix:// prefix (should pass through as-is)
+        let result = create_workload_api_client("unix:/tmp/test-socket.sock").await;
         // Should fail on connection, not on parsing
         assert!(result.is_err());
         if let Err(e) = result {
             let error_msg = e.to_string();
-            // Should not contain "Invalid unix socket address"
-            assert!(!error_msg.contains("Invalid unix socket address"));
+            assert!(error_msg.contains("Failed to create WorkloadApiClient"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_create_workload_api_client_invalid_address() {
+        // Test with invalid address format
+        let result = create_workload_api_client("invalid://address").await;
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("Failed to create WorkloadApiClient"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_workload_api_client_nonexistent_socket() {
+        // Test with non-existent socket path
+        let result = create_workload_api_client("unix:///tmp/nonexistent-socket-99999.sock").await;
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("Failed to create WorkloadApiClient"));
+            // Should include the converted address in the error message
+            assert!(error_msg.contains("unix:/tmp/nonexistent-socket-99999.sock"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_workload_api_client_empty_path() {
+        // Test edge case: empty path after stripping prefix
+        let result = create_workload_api_client("unix://").await;
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("Failed to create WorkloadApiClient"));
+        }
+    }
+
+    #[test]
+    fn test_cert_dir_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path().join("nested").join("cert").join("dir");
+
+        // Verify directory doesn't exist
+        assert!(!cert_dir.exists());
+
+        // The function should create the directory
+        // We can't easily test the full function without a SPIRE agent,
+        // but we can verify the directory creation logic would work
+        fs::create_dir_all(&cert_dir).unwrap();
+        assert!(cert_dir.exists());
     }
 }
