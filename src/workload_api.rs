@@ -4,6 +4,9 @@ use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio_retry::strategy::ExponentialBackoff;
+use tokio_retry::RetryIf;
 
 const UDS_PREFIX: &str = "unix://";
 
@@ -30,51 +33,25 @@ pub async fn fetch_and_write_x509_svid(
     fs::create_dir_all(cert_dir)
         .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
 
-    // Create Workload API client
-    // Handle unix:// URLs by using new_from_path, otherwise convert to unix: format
-    let mut client = create_workload_api_client(agent_address).await?;
-
     // Fetch X.509 SVID with retries (workload may need time to attest)
-    let mut svid = None;
-    let mut last_error_msg = None;
-    for attempt in 1..=10 {
-        match client.fetch_x509_svid().await {
-            Ok(s) => {
-                svid = Some(s);
-                if attempt > 1 {
-                    eprintln!("Successfully fetched X.509 SVID after {attempt} attempts");
-                }
-                break;
-            }
-            Err(e) => {
-                let error_str = format!("{e:?}");
-                last_error_msg = Some(format!("{e} ({error_str})"));
-                // If it's a permission denied error, the workload may still be attesting
-                if error_str.contains("PermissionDenied") && attempt < 10 {
-                    // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s, 16s, etc., max 16s)
-                    let delay = std::cmp::min(1u64 << (attempt - 1), 16);
-                    eprintln!(
-                        "Attempt {attempt} failed (PermissionDenied), retrying in {delay}s..."
-                    );
-                    tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
-                    continue;
-                }
-                // For other errors or last attempt, return the error
-                return Err(anyhow::anyhow!(
-                    "Failed to fetch X.509 SVID from SPIRE agent after {} attempts: {}",
-                    attempt,
-                    last_error_msg.as_ref().unwrap_or(&format!("{e:?}"))
-                ));
-            }
-        }
-    }
+    // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
+    let retry_strategy = ExponentialBackoff::from_millis(1000)
+        .max_delay(Duration::from_secs(16))
+        .take(10);
 
-    let svid = svid.ok_or_else(|| {
-        anyhow::anyhow!(
-            "Failed to fetch X.509 SVID from SPIRE agent: {}",
-            last_error_msg.unwrap_or_else(|| "unknown error".to_string())
-        )
-    })?;
+    let svid = RetryIf::spawn(
+        retry_strategy,
+        || async {
+            let mut client = create_workload_api_client(agent_address).await?;
+            client
+                .fetch_x509_svid()
+                .await
+                .context("Failed to fetch SVID")
+        },
+        is_retryable_error,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 SVID from SPIRE agent: {e}"))?;
 
     // Determine file paths
     let cert_file_name = svid_file_name.unwrap_or("svid.pem");
@@ -124,59 +101,25 @@ pub async fn fetch_and_write_x509_svid(
 /// Returns `Ok(Arc<X509Source>)` if successful, or an error if connection fails after retries.
 pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
     // Create X509Source with retries (workload may need time to attest)
-    let mut last_error_msg = None;
-    for attempt in 1..=10 {
-        // First create a WorkloadApiClient using the shared helper function
-        let client_result = create_workload_api_client(agent_address).await;
-        match client_result {
-            Ok(client) => {
-                // Create X509Source from the client using builder
-                match X509SourceBuilder::new().with_client(client).build().await {
-                    Ok(source) => {
-                        if attempt > 1 {
-                            eprintln!("Successfully created X509Source after {attempt} attempts");
-                        }
-                        return Ok(source);
-                    }
-                    Err(e) => {
-                        let error_str = format!("{e:?}");
-                        last_error_msg = Some(format!("{e} ({error_str})"));
-                        // If it's a permission denied error, the workload may still be attesting
-                        if error_str.contains("PermissionDenied") && attempt < 10 {
-                            // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s, 16s, etc., max 16s)
-                            let delay = std::cmp::min(1u64 << (attempt - 1), 16);
-                            eprintln!(
-                                "Attempt {attempt} failed (PermissionDenied), retrying in {delay}s..."
-                            );
-                            tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
-                            continue;
-                        }
-                        // For other errors or last attempt, continue to return error
-                    }
-                }
-            }
-            Err(e) => {
-                let error_str = format!("{e:?}");
-                last_error_msg = Some(format!("{e} ({error_str})"));
-                // If it's a permission denied error, the workload may still be attesting
-                if error_str.contains("PermissionDenied") && attempt < 10 {
-                    // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s, 16s, etc., max 16s)
-                    let delay = std::cmp::min(1u64 << (attempt - 1), 16);
-                    eprintln!(
-                        "Attempt {attempt} failed (PermissionDenied), retrying in {delay}s..."
-                    );
-                    tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
-                    continue;
-                }
-                // For other errors or last attempt, continue to return error
-            }
-        }
-    }
+    // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
+    let retry_strategy = ExponentialBackoff::from_millis(1000)
+        .max_delay(Duration::from_secs(16))
+        .take(10);
 
-    Err(anyhow::anyhow!(
-        "Failed to create X509Source from SPIRE agent after 10 attempts: {}",
-        last_error_msg.unwrap_or_else(|| "unknown error".to_string())
-    ))
+    RetryIf::spawn(
+        retry_strategy,
+        || async {
+            let client = create_workload_api_client(agent_address).await?;
+            X509SourceBuilder::new()
+                .with_client(client)
+                .build()
+                .await
+                .context("Failed to build X509Source")
+        },
+        is_retryable_error,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to create X509Source from SPIRE agent: {e}"))
 }
 
 async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> {
@@ -194,11 +137,52 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
         })
 }
 
+fn is_retryable_error(err: &anyhow::Error) -> bool {
+    let error_str = format!("{err:?}");
+    error_str.contains("PermissionDenied")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+    use std::time::Instant;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_is_retryable_error() {
+        let err = anyhow::anyhow!("Some PermissionDenied error");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("PermissionDenied: access denied");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("Some other error");
+        assert!(!is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("Connection refused");
+        assert!(!is_retryable_error(&err));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_and_write_x509_svid_fail_fast() {
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+
+        let start = Instant::now();
+        // Use an address that is definitely invalid and shouldn't trigger "PermissionDenied"
+        // "invalid" scheme usually causes an immediate parsing or argument error
+        let result = fetch_and_write_x509_svid("invalid://address", cert_dir, None, None).await;
+        let duration = start.elapsed();
+
+        assert!(result.is_err());
+        // Should return essentially immediately, definitely less than the first retry backoff (1s)
+        assert!(
+            duration < Duration::from_millis(500),
+            "Should fail fast on non-retryable error, took {:?}",
+            duration
+        );
+    }
 
     #[tokio::test]
     async fn test_fetch_and_write_x509_svid_invalid_address() {
@@ -217,6 +201,7 @@ mod tests {
                 || error_msg.contains("Invalid agent address")
                 || error_msg.contains("Failed to connect")
                 || error_msg.contains("invalid")
+                || error_msg.contains("Failed to fetch X.509 SVID")
         );
     }
 
