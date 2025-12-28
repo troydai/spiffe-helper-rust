@@ -5,8 +5,8 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        description: Format Rust code with rustfmt
-        entry: cargo fmt --all --
+        description: Check Rust code formatting with rustfmt
+        entry: cargo fmt --all -- --check
         language: system
         types: [rust]
         pass_filenames: false
