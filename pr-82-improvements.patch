@@ -1,0 +1,105 @@
+From 1b56a48838c27cb4c2db360ee77c9221a7e2024b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 28 Dec 2025 16:58:01 +0000
+Subject: [PATCH] Improve pre-commit configuration and documentation
+
+Changes:
+- Change cargo fmt to check-only mode (--check flag)
+  - Prevents automatic file modification during commit
+  - Matches CI behavior and developer expectations
+  - Developers can run 'cargo fmt' manually to fix issues
+
+- Add Development section to README.md
+  - Document pre-commit as a development requirement
+  - Add installation instructions for pip and Homebrew
+  - Explain what each hook checks
+  - Provide manual commands for running checks
+
+These improvements enhance developer experience and prevent surprises
+from auto-formatting behavior.
+---
+ .pre-commit-config.yaml |  4 ++--
+ README.md               | 52 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 54 insertions(+), 2 deletions(-)
+
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index f65883f..744827c 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -5,8 +5,8 @@ repos:
+     hooks:
+       - id: cargo-fmt
+         name: cargo fmt
+-        description: Format Rust code with rustfmt
+-        entry: cargo fmt --all --
++        description: Check Rust code formatting with rustfmt
++        entry: cargo fmt --all -- --check
+         language: system
+         types: [rust]
+         pass_filenames: false
+diff --git a/README.md b/README.md
+index e109f85..28fdd1e 100644
+--- a/README.md
++++ b/README.md
+@@ -176,6 +176,58 @@ health_checks {
+ 
+ **Note:** The `daemon_mode` setting is optional. If omitted, daemon mode is used by default. To use one-shot mode, explicitly set `daemon_mode = false`.
+ 
++## Development
++
++### Prerequisites
++
++This project uses [pre-commit](https://pre-commit.com/) to ensure code quality before commits. Install it once:
++
++```bash
++# Using pip
++pip install pre-commit
++
++# Or using Homebrew (macOS/Linux)
++brew install pre-commit
++```
++
++### Setup
++
++1. Install pre-commit hooks:
++   ```bash
++   pre-commit install
++   ```
++
++2. (Optional) Run hooks manually on all files:
++   ```bash
++   pre-commit run --all-files
++   ```
++
++The pre-commit hooks will automatically run on every commit and check:
++- **Code formatting** (`cargo fmt --check`) - Ensures consistent formatting
++- **Linting** (`cargo clippy`) - Catches common mistakes and enforces best practices
++- **Build** (`cargo build`) - Verifies the project compiles
++- **Tests** (`cargo test`) - Runs the test suite
++
++If any check fails, the commit will be blocked. Fix the issues and try again.
++
++### Manual Commands
++
++You can also run these checks manually:
++
++```bash
++# Format code
++cargo fmt --all
++
++# Run linter
++cargo clippy --all-targets --all-features -- -D warnings
++
++# Build project
++cargo build
++
++# Run tests
++cargo test
++```
++
+ ## Integration Testing
+ 
+ This repository includes a comprehensive integration test environment using a local kind cluster with SPIRE server and agents. For detailed instructions on setting up and using the integration test environment, see [Integration Test Documentation](docs/integration_test.md).
+-- 
+2.43.0
+
