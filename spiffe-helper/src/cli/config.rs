@@ -350,9 +350,100 @@ fn extract_port(val: &hcl::Value) -> anyhow::Result<u16> {
     Err(anyhow!("given value is not a number"))
 }
 
+/// Parse file mode from string, supporting both octal (0644) and decimal notation
+/// Validates that the mode is in the range 0-0777
+pub fn parse_file_mode(mode_str: &str) -> Result<u32> {
+    let trimmed = mode_str.trim();
+
+    // If it starts with '0', parse as octal
+    let mode = if trimmed.starts_with('0') && trimmed.len() > 1 {
+        u32::from_str_radix(trimmed, 8)
+            .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
+    } else {
+        trimmed
+            .parse::<u32>()
+            .map_err(|e| anyhow!("Invalid file mode '{}': {}", mode_str, e))?
+    };
+
+    // Validate range (0-0777)
+    if mode > 0o777 {
+        return Err(anyhow!(
+            "File mode '{}' is out of range (must be 0-0777)",
+            mode_str
+        ));
+    }
+
+    Ok(mode)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod file_mode_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_file_mode_octal() {
+            let mode = parse_file_mode("0644").unwrap();
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_with_leading_zero() {
+            let mode = parse_file_mode("0600").unwrap();
+            assert_eq!(mode, 0o600);
+        }
+
+        #[test]
+        fn test_parse_file_mode_decimal() {
+            let mode = parse_file_mode("420").unwrap();
+            assert_eq!(mode, 420);
+        }
+
+        #[test]
+        fn test_parse_file_mode_zero() {
+            let mode = parse_file_mode("0").unwrap();
+            assert_eq!(mode, 0);
+        }
+
+        #[test]
+        fn test_parse_file_mode_max_valid() {
+            let mode = parse_file_mode("0777").unwrap();
+            assert_eq!(mode, 0o777);
+        }
+
+        #[test]
+        fn test_parse_file_mode_with_whitespace() {
+            let mode = parse_file_mode("  0644  ").unwrap();
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn test_parse_file_mode_invalid_too_large() {
+            let result = parse_file_mode("1000");
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("out of range"));
+        }
+
+        #[test]
+        fn test_parse_file_mode_invalid_octal() {
+            let result = parse_file_mode("0899");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_parse_file_mode_invalid_string() {
+            let result = parse_file_mode("invalid");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_parse_file_mode_empty() {
+            let result = parse_file_mode("");
+            assert!(result.is_err());
+        }
+    }
 
     fn parse_hcl_value(hcl_str: &str) -> hcl::Value {
         hcl::from_str(hcl_str).expect("Failed to parse HCL")
