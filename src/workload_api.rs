@@ -123,22 +123,11 @@ pub async fn fetch_and_write_x509_svid(
 ///
 /// Returns `Ok(Arc<X509Source>)` if successful, or an error if connection fails after retries.
 pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
-    // Convert agent_address to the format expected by spiffe crate
-    let spiffe_path = if agent_address.starts_with("unix://") {
-        let socket_path = agent_address
-            .strip_prefix("unix://")
-            .ok_or_else(|| anyhow::anyhow!("Invalid unix socket address: {agent_address}"))?;
-        // Use unix: prefix (not unix://) for spiffe crate
-        format!("unix:{socket_path}")
-    } else {
-        agent_address.to_string()
-    };
-
     // Create X509Source with retries (workload may need time to attest)
     let mut last_error_msg = None;
     for attempt in 1..=10 {
-        // First create a WorkloadApiClient
-        let client_result = WorkloadApiClient::new_from_path(&spiffe_path).await;
+        // First create a WorkloadApiClient using the shared helper function
+        let client_result = create_workload_api_client(agent_address).await;
         match client_result {
             Ok(client) => {
                 // Create X509Source from the client using builder
