@@ -176,6 +176,58 @@ health_checks {
 
 **Note:** The `daemon_mode` setting is optional. If omitted, daemon mode is used by default. To use one-shot mode, explicitly set `daemon_mode = false`.
 
+## Development
+
+### Prerequisites
+
+This project uses [pre-commit](https://pre-commit.com/) to ensure code quality before commits. Install it once:
+
+```bash
+# Using pip
+pip install pre-commit
+
+# Or using Homebrew (macOS/Linux)
+brew install pre-commit
+```
+
+### Setup
+
+1. Install pre-commit hooks:
+   ```bash
+   pre-commit install
+   ```
+
+2. (Optional) Run hooks manually on all files:
+   ```bash
+   pre-commit run --all-files
+   ```
+
+The pre-commit hooks will automatically run on every commit and check:
+- **Code formatting** (`cargo fmt --check`) - Ensures consistent formatting
+- **Linting** (`cargo clippy`) - Catches common mistakes and enforces best practices
+- **Build** (`cargo build`) - Verifies the project compiles
+- **Tests** (`cargo test`) - Runs the test suite
+
+If any check fails, the commit will be blocked. Fix the issues and try again.
+
+### Manual Commands
+
+You can also run these checks manually:
+
+```bash
+# Format code
+cargo fmt --all
+
+# Run linter
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Build project
+cargo build
+
+# Run tests
+cargo test
+```
+
 ## Integration Testing
 
 This repository includes a comprehensive integration test environment using a local kind cluster with SPIRE server and agents. For detailed instructions on setting up and using the integration test environment, see [Integration Test Documentation](docs/integration_test.md).
