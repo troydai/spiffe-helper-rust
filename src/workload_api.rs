@@ -45,7 +45,7 @@ pub async fn fetch_and_write_x509_svid(
 
     write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name).await?;
 
-    // Log with SPIFFE ID and certificate expiry (consistent with on_x509_update)
+    // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
     let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
         Ok((_, cert)) => cert
             .validity()
@@ -106,17 +106,48 @@ async fn write_svid_to_files(
     Ok(())
 }
 
-/// Handler for X509Context updates.
+/// Writes the X.509 trust bundle to the specified directory.
+async fn write_bundle_to_file(
+    bundle: &X509Bundle,
+    cert_dir: &Path,
+    bundle_file_name: &str,
+) -> Result<()> {
+    let bundle_path = cert_dir.join(bundle_file_name);
+
+    // Write bundle certificates (PEM format)
+    let bundle_pem = bundle
+        .authorities()
+        .iter()
+        .map(|cert: &spiffe::cert::Certificate| {
+            pem::encode(&pem::Pem {
+                tag: "CERTIFICATE".to_string(),
+                contents: cert.as_ref().to_vec(),
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fs::write(&bundle_path, bundle_pem)
+        .with_context(|| format!("Failed to write bundle to {}", bundle_path.display()))?;
+
+    Ok(())
+}
+
+/// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.
 ///
-/// This function is called when the X509Source receives an update notification from the SPIRE agent.
-/// It writes the updated SVID (certificate and private key) to disk.
+/// This function is called when the X509Source receives an update notification.
+/// It writes the updated SVID (certificate and private key) and trust bundle to the configured directory.
 ///
 /// # Arguments
 ///
 /// * `svid` - The updated X509 SVID containing the certificate chain and private key
-/// * `_bundle` - The trust bundle (currently unused, reserved for future bundle writing - see issue #89)
+/// * `bundle` - The trust bundle containing CA certificates
 /// * `config` - Configuration containing output paths
-pub async fn on_x509_update(svid: &X509Svid, _bundle: &X509Bundle, config: &Config) -> Result<()> {
+pub async fn write_x509_svid_on_update(
+    svid: &X509Svid,
+    bundle: &X509Bundle,
+    config: &Config,
+) -> Result<()> {
     let cert_dir = config
         .cert_dir
         .as_ref()
@@ -130,6 +161,8 @@ pub async fn on_x509_update(svid: &X509Svid, _bundle: &X509Bundle, config: &Conf
         config.svid_key_file_name(),
     )
     .await?;
+
+    write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name()).await?;
 
     // Log update with SPIFFE ID and certificate expiry
     let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
@@ -454,7 +487,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_on_x509_update_writes_files() {
+    async fn test_write_x509_svid_on_update_writes_files() {
         use spiffe::bundle::x509::X509Bundle;
         use spiffe::spiffe_id::TrustDomain;
         use spiffe::svid::x509::X509Svid;
@@ -529,16 +562,18 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let bundle = X509Bundle::parse_from_der(td, &cert_der).expect("Failed to parse Bundle");
 
         // Call handler
-        let result = on_x509_update(&svid, &bundle, &config).await;
+        let result = write_x509_svid_on_update(&svid, &bundle, &config).await;
 
         assert!(result.is_ok());
 
         // Verify files
         let cert_path = cert_dir.join("test_svid.pem");
         let key_path = cert_dir.join("test_key.pem");
+        let bundle_path = cert_dir.join("svid_bundle.pem"); // default name
 
         assert!(cert_path.exists());
         assert!(key_path.exists());
+        assert!(bundle_path.exists());
 
         // Verify content
         let written_cert = fs::read_to_string(cert_path).unwrap();
@@ -546,5 +581,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
 
         let written_key = fs::read_to_string(key_path).unwrap();
         assert!(written_key.contains("BEGIN PRIVATE KEY"));
+
+        let written_bundle = fs::read_to_string(bundle_path).unwrap();
+        assert!(written_bundle.contains("BEGIN CERTIFICATE"));
     }
 }

@@ -50,6 +50,12 @@ impl Config {
     pub fn svid_key_file_name(&self) -> &str {
         self.svid_key_file_name.as_deref().unwrap_or("svid_key.pem")
     }
+
+    pub fn svid_bundle_file_name(&self) -> &str {
+        self.svid_bundle_file_name
+            .as_deref()
+            .unwrap_or("svid_bundle.pem")
+    }
 }
 
 pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {

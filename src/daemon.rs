@@ -17,6 +17,10 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 pub async fn run(config: Config, agent_address: String) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
 
+    // Set up signal handling for graceful shutdown
+    let mut sigterm =
+        signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?;
+
     // Create X509Source (this waits for the first update)
     let source = workload_api::create_x509_source(&agent_address).await?;
     println!("Connected to SPIRE agent");
@@ -30,10 +34,6 @@ pub async fn run(config: Config, agent_address: String) -> Result<()> {
         Some(hc) => health::start_server(hc).await?,
         None => None,
     };
-
-    // Set up signal handling for graceful shutdown
-    let mut sigterm =
-        signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?;
 
     // Set up periodic liveness logging
     let mut liveness_interval = interval(Duration::from_secs(DEFAULT_LIVENESS_LOG_INTERVAL_SECS));
@@ -115,5 +115,5 @@ async fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> 
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    workload_api::on_x509_update(&svid, &bundle, config).await
+    workload_api::write_x509_svid_on_update(&svid, &bundle, config).await
 }
