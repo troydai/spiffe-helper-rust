@@ -128,7 +128,20 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let error_str = format!("{err:?}");
+
+    // Retry on various transient errors that can occur during workload attestation
+    // or when the SPIRE agent is not yet ready
     error_str.contains("PermissionDenied")
+        || error_str.contains("connection refused")
+        || error_str.contains("Connection refused")
+        || error_str.contains("transport error")
+        || error_str.contains("no identity")
+        || error_str.contains("No identity")
+        || error_str.contains("not found")
+        || error_str.contains("channel closed")
+        || error_str.contains("broken pipe")
+        // Retry on X509Source build failures as they often indicate the agent is not ready
+        || error_str.contains("Failed to build X509Source")
 }
 
 #[cfg(test)]
@@ -140,16 +153,51 @@ mod tests {
 
     #[test]
     fn test_is_retryable_error() {
+        // PermissionDenied errors should be retried
         let err = anyhow::anyhow!("Some PermissionDenied error");
         assert!(is_retryable_error(&err));
 
         let err = anyhow::anyhow!("PermissionDenied: access denied");
         assert!(is_retryable_error(&err));
 
-        let err = anyhow::anyhow!("Some other error");
+        // Connection errors should be retried
+        let err = anyhow::anyhow!("Connection refused");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("connection refused: socket not available");
+        assert!(is_retryable_error(&err));
+
+        // Transport errors should be retried
+        let err = anyhow::anyhow!("transport error: connection reset");
+        assert!(is_retryable_error(&err));
+
+        // Identity not available should be retried
+        let err = anyhow::anyhow!("no identity available");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("No identity found for workload");
+        assert!(is_retryable_error(&err));
+
+        // X509Source build failures should be retried
+        let err = anyhow::anyhow!("Failed to build X509Source: agent not ready");
+        assert!(is_retryable_error(&err));
+
+        // Channel/pipe errors should be retried
+        let err = anyhow::anyhow!("channel closed unexpectedly");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("broken pipe");
+        assert!(is_retryable_error(&err));
+
+        // Socket not found should be retried
+        let err = anyhow::anyhow!("socket not found");
+        assert!(is_retryable_error(&err));
+
+        // Generic errors should NOT be retried
+        let err = anyhow::anyhow!("Some other random error");
         assert!(!is_retryable_error(&err));
 
-        let err = anyhow::anyhow!("Connection refused");
+        let err = anyhow::anyhow!("Invalid configuration");
         assert!(!is_retryable_error(&err));
     }
 
