@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::BundleSource;
 use spiffe::svid::SvidSource;
+use spiffe::workload_api::x509_source::X509Source;
+use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
 
@@ -25,19 +27,7 @@ pub async fn run(config: Config) -> Result<()> {
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write
-    {
-        let svid = source
-            .get_svid()
-            .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
-            .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
-
-        let bundle = source
-            .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
-            .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
-            .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
-
-        workload_api::on_x509_update(&svid, &bundle, &config).await?;
-    }
+    perform_initial_fetch(&source, &config).await?;
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
@@ -71,35 +61,14 @@ pub async fn run(config: Config) -> Result<()> {
             }
             // Watch for updates from X509Source
             res = update_channel.changed() => {
-                 match res {
-                     Ok(_) => {
-                         println!("Received X.509 update notification");
-                         // Fetch and write
-                         match source.get_svid() {
-                             Ok(Some(svid)) => {
-                                 match source.get_bundle_for_trust_domain(svid.spiffe_id().trust_domain()) {
-                                     Ok(Some(bundle)) => {
-                                         if let Err(e) = workload_api::on_x509_update(&svid, &bundle, &config).await {
-                                             eprintln!("Failed to handle X.509 update: {}", e);
-                                         }
-                                     }
-                                     Ok(None) => eprintln!("Update received but no bundle found"),
-                                     Err(e) => eprintln!("Failed to get bundle: {}", e),
-                                 }
-                             }
-                             Ok(None) => eprintln!("Update received but no SVID found"),
-                             Err(e) => eprintln!("Failed to get SVID: {}", e),
-                         }
-                     }
-                     Err(_) => {
-                         eprintln!("Update channel closed");
-                         // If the update channel is closed, it means the source is closed or dropped.
-                         // This shouldn't happen unless we close it, so treat as error or exit?
-                         // For now, let's treat it as a reason to exit the loop if we rely on it.
-                         // But maybe we should just log and continue (though updates won't come).
-                         // Assuming fatal for daemon function.
-                         break Err(anyhow::anyhow!("X509Source update channel closed"));
-                     }
+                 if let Err(e) = res {
+                     eprintln!("Update channel closed: {}", e);
+                     break Err(anyhow::anyhow!("X509Source update channel closed"));
+                 }
+
+                 println!("Received X.509 update notification");
+                 if let Err(e) = handle_update_notification(&source, &config).await {
+                     eprintln!("Failed to handle X.509 update: {}", e);
                  }
             }
             // If health server is running, watch for its completion (which indicates failure)
@@ -138,4 +107,32 @@ pub async fn run(config: Config) -> Result<()> {
 
     println!("Daemon shutdown complete");
     result
+}
+
+async fn perform_initial_fetch(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+    let svid = source
+        .get_svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
+
+    let bundle = source
+        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
+
+    workload_api::on_x509_update(&svid, &bundle, config).await
+}
+
+async fn handle_update_notification(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+    let svid = source
+        .get_svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
+
+    let bundle = source
+        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
+
+    workload_api::on_x509_update(&svid, &bundle, config).await
 }
