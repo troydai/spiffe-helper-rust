@@ -43,7 +43,24 @@ pub async fn fetch_and_write_x509_svid(
         .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
 
-    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name).await
+    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name).await?;
+
+    // Log with SPIFFE ID and certificate expiry (consistent with on_x509_update)
+    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    };
+    println!(
+        "Fetched certificate: spiffe_id={}, expires={}",
+        svid.spiffe_id(),
+        expiry
+    );
+
+    Ok(())
 }
 
 /// Writes the X.509 SVID to the specified directory.
@@ -89,7 +106,16 @@ async fn write_svid_to_files(
     Ok(())
 }
 
-/// Handler for X509Context updates
+/// Handler for X509Context updates.
+///
+/// This function is called when the X509Source receives an update notification from the SPIRE agent.
+/// It writes the updated SVID (certificate and private key) to disk.
+///
+/// # Arguments
+///
+/// * `svid` - The updated X509 SVID containing the certificate chain and private key
+/// * `_bundle` - The trust bundle (currently unused, reserved for future bundle writing - see issue #89)
+/// * `config` - Configuration containing output paths
 pub async fn on_x509_update(svid: &X509Svid, _bundle: &X509Bundle, config: &Config) -> Result<()> {
     let cert_dir = config
         .cert_dir
@@ -105,7 +131,20 @@ pub async fn on_x509_update(svid: &X509Svid, _bundle: &X509Bundle, config: &Conf
     )
     .await?;
 
-    println!("Updated certificate for spiffe_id={}", svid.spiffe_id());
+    // Log update with SPIFFE ID and certificate expiry
+    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    };
+    println!(
+        "Updated certificate: spiffe_id={}, expires={}",
+        svid.spiffe_id(),
+        expiry
+    );
 
     Ok(())
 }
@@ -257,22 +296,23 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_and_write_x509_svid_custom_file_names() {
         let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path();
+        let cert_dir = temp_dir.path().join("nested_certs");
 
-        // Test with custom file names
+        // Test with custom file names - should fail on connection
         let result = fetch_and_write_x509_svid(
             "unix:///tmp/nonexistent-socket.sock",
-            cert_dir,
+            &cert_dir,
             "custom_cert.pem",
             "custom_key.pem",
         )
         .await;
 
-        // Should fail on connection, but verify directory was created
+        // Should fail on connection before creating directory
+        // (directory is only created when we have an SVID to write)
         assert!(result.is_err());
         assert!(
-            cert_dir.exists(),
-            "Cert directory should be created even if connection fails"
+            !cert_dir.exists(),
+            "Cert directory should not be created if fetch fails"
         );
     }
 
