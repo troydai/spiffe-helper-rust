@@ -56,6 +56,12 @@ impl Config {
             .as_deref()
             .unwrap_or("svid_bundle.pem")
     }
+
+    pub fn agent_address(&self) -> Result<&str> {
+        self.agent_address
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))
+    }
 }
 
 pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {

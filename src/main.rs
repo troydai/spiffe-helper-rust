@@ -27,22 +27,16 @@ async fn main() -> Result<()> {
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
 
-    // Validate agent_address presence
-    let agent_address = config
-        .agent_address
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))?;
-
     if daemon_mode {
-        daemon::run(config, agent_address).await
-    } else {
-        run_once(config, agent_address).await
+        return daemon::run(config).await;
     }
+
+    run_once(config).await
 }
 
-async fn run_once(config: config::Config, agent_address: String) -> Result<()> {
+async fn run_once(config: config::Config) -> Result<()> {
     println!("Running spiffe-helper-rust in one-shot mode...");
-    svid::fetch_x509_certificate(&config, &agent_address).await?;
+    svid::fetch_x509_certificate(&config, config.agent_address()?).await?;
     println!("One-shot mode complete");
     Ok(())
 }
