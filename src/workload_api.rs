@@ -39,16 +39,10 @@ pub async fn fetch_and_write_x509_svid(
     let source = create_x509_source(agent_address).await?;
 
     // Get the SVID from the source
-    let svid_opt = source
+    let svid: X509Svid = source
         .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?;
-
-    // Explicitly annotate type X509Svid to resolve type inference error
-    let svid: X509Svid = if let Some(s) = svid_opt {
-        s
-    } else {
-        return Err(anyhow::anyhow!("X509Source returned no SVID (None)"));
-    };
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
 
     // Determine file paths
     let cert_path = cert_dir.join(svid_file_name);
