@@ -90,11 +90,7 @@ pub async fn write_svid_to_files(
 }
 
 /// Handler for X509Context updates
-pub async fn on_x509_update(
-    svid: &X509Svid,
-    _bundle: &X509Bundle,
-    config: &Config,
-) -> Result<()> {
+pub async fn on_x509_update(svid: &X509Svid, _bundle: &X509Bundle, config: &Config) -> Result<()> {
     let cert_dir = config
         .cert_dir
         .as_ref()
@@ -109,10 +105,7 @@ pub async fn on_x509_update(
     )
     .await?;
 
-    println!(
-        "Updated certificate for spiffe_id={}",
-        svid.spiffe_id()
-    );
+    println!("Updated certificate for spiffe_id={}", svid.spiffe_id());
 
     Ok(())
 }
