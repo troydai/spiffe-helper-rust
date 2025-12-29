@@ -431,7 +431,7 @@ mod tests {
         let cert1_der = vec![0x30, 0x01, 0x01]; // Sample DER data
         let cert2_der = vec![0x30, 0x02, 0x02]; // Sample DER data
 
-        let cert_chain_pem = vec![cert1_der, cert2_der]
+        let cert_chain_pem = [cert1_der, cert2_der]
             .iter()
             .map(|cert| {
                 pem::encode(&pem::Pem {
