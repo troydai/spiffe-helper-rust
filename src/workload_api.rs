@@ -379,14 +379,6 @@ mod tests {
         assert!(cert_dir.exists());
     }
 
-    // Test helper: Creates a temporary Unix domain socket path for testing
-    fn create_test_socket_path() -> std::path::PathBuf {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let count = COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("spiffe-test-socket-{}.sock", count))
-    }
-
     // Test helper: Validates PEM certificate format
     fn validate_pem_certificate(content: &str) -> bool {
         content.starts_with("-----BEGIN CERTIFICATE-----")
