@@ -14,16 +14,11 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 
 /// Runs the daemon mode: fetches initial certificate, starts health server,
 /// and waits for SIGTERM.
-pub async fn run(config: Config) -> Result<()> {
+pub async fn run(config: Config, agent_address: String) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
 
-    let agent_address = config
-        .agent_address
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))?;
-
     // Create X509Source (this waits for the first update)
-    let source = workload_api::create_x509_source(agent_address).await?;
+    let source = workload_api::create_x509_source(&agent_address).await?;
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write
