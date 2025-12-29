@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use crate::config::Config;
+use spiffe::bundle::x509::X509Bundle;
 use spiffe::svid::x509::X509Svid;
 use spiffe::svid::SvidSource;
 use spiffe::workload_api::client::WorkloadApiClient;
@@ -44,7 +46,20 @@ pub async fn fetch_and_write_x509_svid(
         .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
 
-    // Determine file paths
+    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name).await
+}
+
+/// Writes X.509 SVID (certificate and key) to the specified directory.
+pub async fn write_svid_to_files(
+    svid: &X509Svid,
+    cert_dir: &Path,
+    svid_file_name: &str,
+    svid_key_file_name: &str,
+) -> Result<()> {
+    // Create cert directory if it doesn't exist
+    fs::create_dir_all(cert_dir)
+        .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
+
     let cert_path = cert_dir.join(svid_file_name);
     let key_path = cert_dir.join(svid_key_file_name);
 
@@ -73,6 +88,29 @@ pub async fn fetch_and_write_x509_svid(
     fs::write(&key_path, key_pem)
         .with_context(|| format!("Failed to write private key to {}", key_path.display()))?;
 
+    Ok(())
+}
+
+/// Handler for X509Context updates
+pub async fn on_x509_update(
+    svid: &X509Svid,
+    _bundle: &X509Bundle,
+    config: &Config,
+) -> Result<()> {
+    if let Some(cert_dir) = &config.cert_dir {
+        let cert_dir = Path::new(cert_dir);
+        let svid_file_name = config.svid_file_name();
+        let svid_key_file_name = config.svid_key_file_name();
+
+        write_svid_to_files(svid, cert_dir, svid_file_name, svid_key_file_name).await?;
+        
+        // Future: write bundle
+        // Future: signal process
+    }
+    
+    // Log the update
+    eprintln!("Updated X.509 SVID: {}", svid.spiffe_id());
+    
     Ok(())
 }
 
@@ -377,5 +415,80 @@ mod tests {
         // but we can verify the directory creation logic would work
         fs::create_dir_all(&cert_dir).unwrap();
         assert!(cert_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_write_svid_to_files() {
+        use spiffe::svid::x509::X509Svid;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+        
+        // Self-signed cert (with SAN) and key for testing
+        let cert_pem = r#"-----BEGIN CERTIFICATE-----
+MIIDsjCCApqgAwIBAgIUdSDbCP50csvka2qEZDl7ZzdTTfswDQYJKoZIhvcNAQEL
+BQAwTjELMAkGA1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5
+MQwwCgYDVQQKDANPcmcxEjAQBgNVBAMMCWxvY2FsaG9zdDAeFw0yNTEyMjkwMDI5
+MjNaFw0yNjEyMjkwMDI5MjNaME4xCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVTdGF0
+ZTENMAsGA1UEBwwEQ2l0eTEMMAoGA1UECgwDT3JnMRIwEAYDVQQDDAlsb2NhbGhv
+c3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDBQIhUXd1gXpuLtHlB
+8tXDGYQ63sdlvnWrCOxfKBW1yhNUEDQbF0e+Ij/wrHMiyY9P6I2cxty6LxFCp33g
+jUeUJhV+2eEkHxsWBP6AnJ2x30i5LmkDQNDr7fVtMAjckHUN16I3f3Q5ntJ2E55U
+VR1Tx7bNTKKfd0zRt3AaQF4OKiVROggxriFZxlWlKW4CyXVzv7bLKwuEYSuwgAFw
+raM3YfRJZDd+IhJDg7Sku9HBQoVzAh8LdlTdoaZd5AEUrz+PXfw5T+Guqm4T1ckW
+BLiHKsShZkNIGiQDIhN/GJpJ2BwymdMi0fc3Krlu2sqtZXOiMsuyjbIDoIDlEWEE
+L6ulAgMBAAGjgYcwgYQwDgYDVR0PAQH/BAQDAgWgMB0GA1UdJQQWMBQGCCsGAQUF
+BwMBBggrBgEFBQcDAjAJBgNVHRMEAjAAMCkGA1UdEQQiMCCGHnNwaWZmZTovL2V4
+YW1wbGUub3JnL215c2VydmljZTAdBgNVHQ4EFgQUqCNQRmkVxf7dHBK13TUWnAkE
+CGMwDQYJKoZIhvcNAQELBQADggEBAFWq3lRoRIFfS7SvnOIVBq0o3xBkN9umxgHE
+PcjEPe9O1PWrEMFAtikQCVDsWE89YIwRfMUoctleO4wD/WgtehQUDnnGPOLTkfi2
++gpLm3j/lRw4MuCGNgT04XQqeD/RWkVMfrTri/dDXruKEAat97T4AgfChwIhSgWE
+YcKShkPHnnQjrPoItWhUbJpixcJ3MUbdgC3X958V062+g2HsiuTRZzd1BEsMjl22
+guDNG4ScLWIW4wxNHcOfy8+j5dnPUHw/bhhg1XWnEV9nM5crF5vYfH5X9iWaufAy
+SCSKvFpIqm/RGkdnQVU+AMMFItoF4stiF109YJFUaYttYio0Upw=
+-----END CERTIFICATE-----"#;
+
+        let key_pem = r#"-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDBQIhUXd1gXpuL
+tHlB8tXDGYQ63sdlvnWrCOxfKBW1yhNUEDQbF0e+Ij/wrHMiyY9P6I2cxty6LxFC
+p33gjUeUJhV+2eEkHxsWBP6AnJ2x30i5LmkDQNDr7fVtMAjckHUN16I3f3Q5ntJ2
+E55UVR1Tx7bNTKKfd0zRt3AaQF4OKiVROggxriFZxlWlKW4CyXVzv7bLKwuEYSuw
+gAFwraM3YfRJZDd+IhJDg7Sku9HBQoVzAh8LdlTdoaZd5AEUrz+PXfw5T+Guqm4T
+1ckWBLiHKsShZkNIGiQDIhN/GJpJ2BwymdMi0fc3Krlu2sqtZXOiMsuyjbIDoIDl
+EWEEL6ulAgMBAAECggEAHIZTeSx/tC1SxUzGxzK6Vblq+KuQgBacVLoU9bi7d6FT
+uAlKP6NwjgKNMI+r0PsyYaegW39I7lxrLkz9ugrwgVAbxSUQ492JiHcFP+OeLTaZ
+i+frTTUggWqW2t6HuFLETF5DTfDMrYKhaxdbO/RyRz8H3wbMTEB2QNBURjOxDmLs
+9mhxNbg26G4LeCqCoqRkNuqFWxMRfpBq/63BLoOB8K/5tqQkqimNKNf1RQQtjKx+
+xe+d37XEs3K8MUfbmCU5atizHMbqjzlFdyZoFM0XzmnNTaXtebWrNfqxeW1odC9Y
+HgFJ73QfTwpUgj33iY2XW1qukxuCC7SMyzz3OsBeQwKBgQD9TZ+T89B9L2rCV87j
+pcPRbobHdwwB3/9AD4IffBxyUdpcWpMUAxQyn3HEgbmEzr6E6Jf2RhCTn10vNoAa
+PcsVDjA/MiUEnePUF6KCkC8rgV/aRNR5B1YGQvg7m9nI4OOOE4D77Cv32DVtUfUD
+4QRcnf7sLfyM2Dd6bliexV73FwKBgQDDTz14MZoJFRGSQ7VDtqsVorrurX4KsnoX
++uWKFmxC+shTwiZAixlS8pKTqKdhr5LZj5rD+V5+KhO6aW4RNVHfADP4xW4SxUdA
+YUUXyCKf5C4wi6tdQdWEt+Veahv7Mbrr9CleemGzOsPSTAR3q5mh+wgkpcORgfwg
+Ld9e5MFoowKBgQDl9lTL02wSWrwHmARB9Dokpr1B1ThXc26eT/YIc3q35svhUHF6
+l5j8pHh6uHMeuTuKGkfr04w1GVdWB5qhODxo7yqqFPI6kMVHxfVJp3DLhHbrB9YF
+0r0sjhwisck0b8bnM5nEHJOGPQm0J9XTIbP+CYpoDQ/dJmanhgp6iiE/HQKBgGJW
+tZadMve7ufsxSEVt5jqgkwq2JC5yqvMECys6GwymhNNXgDcjUn7nUFI0qwKOipws
+qDpghulzejdz+k2D0VM9IO3zSnb9CeEqmMVeqcBj/bXHvWLZUQ7gIQcm2iviYEGJ
+0IKXkDXUMuDiEaXHqzVZ1kHNjOjoz+/L6Ro4iAGNAoGBAPAa1H7cRk6yH58MXYlz
+XjzwwwOewgCko0L1a2UsmD7s2/YnPvkyIXLMY4WXrxX+svQ2/M2ypeRgf0yXo47u
+nwJjWbaapHaSBIup3HE/+z8pSlK7tGvtOXmExxLYAF6ET+1Di0rlSoh8ePEhuoA1
+Gkd9+8VebP00iWI2zrFdgXE4
+-----END PRIVATE KEY-----"#;
+
+        let cert_pem_parsed = pem::parse(cert_pem).expect("Failed to parse cert PEM");
+        let key_pem_parsed = pem::parse(key_pem).expect("Failed to parse key PEM");
+        
+        let svid = X509Svid::parse_from_der(&cert_pem_parsed.contents, &key_pem_parsed.contents).expect("Failed to parse SVID");
+        
+        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem").await.expect("Failed to write files");
+        
+        let saved_cert = fs::read_to_string(cert_dir.join("svid.pem")).unwrap();
+        let saved_key = fs::read_to_string(cert_dir.join("svid_key.pem")).unwrap();
+        
+        // Ensure they contain the PEM headers
+        assert!(saved_cert.contains("CERTIFICATE"));
+        assert!(saved_key.contains("PRIVATE KEY"));
     }
 }
