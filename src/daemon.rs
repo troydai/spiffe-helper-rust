@@ -17,10 +17,6 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 pub async fn run(config: Config) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
 
-    // Set up signal handling for graceful shutdown
-    let mut sigterm =
-        signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?;
-
     // Create X509Source (this waits for the first update)
     let source = workload_api::create_x509_source(config.agent_address()?).await?;
     println!("Connected to SPIRE agent");
@@ -34,6 +30,10 @@ pub async fn run(config: Config) -> Result<()> {
         Some(hc) => health::start_server(hc).await?,
         None => None,
     };
+
+    // Set up signal handling for graceful shutdown
+    let mut sigterm =
+        signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?;
 
     // Set up periodic liveness logging
     let mut liveness_interval = interval(Duration::from_secs(DEFAULT_LIVENESS_LOG_INTERVAL_SECS));
