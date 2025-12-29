@@ -21,10 +21,8 @@ async fn main() -> Result<()> {
     let mut config = config::parse_hcl_config(config_path.as_path())
         .with_context(|| format!("Failed to parse config file: {}", args.config))?;
 
-    // Override daemon_mode if provided via CLI
-    if let Some(override_value) = args.daemon_mode {
-        config.daemon_mode = Some(override_value);
-    }
+    // CLI flag overrides config value (if provided)
+    config.daemon_mode = args.daemon_mode.or(config.daemon_mode);
 
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
