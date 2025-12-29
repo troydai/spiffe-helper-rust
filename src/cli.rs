@@ -30,19 +30,7 @@ pub struct Args {
     #[arg(long, value_enum)]
     pub daemon_mode: Option<DaemonModeFlag>,
 
-    /// SPIRE agent socket address. Overrides `agent_address` in the config file.
-    #[arg(short, long, value_parser = validate_agent_address)]
-    pub agent_address: Option<String>,
-
     /// Print version number
     #[arg(short = 'v', long)]
     pub version: bool,
-}
-
-fn validate_agent_address(v: &str) -> Result<String, String> {
-    if !v.starts_with("unix://") {
-        return Err(String::from("Agent address must start with 'unix://'"));
-    }
-
-    Ok(v.to_string())
 }
