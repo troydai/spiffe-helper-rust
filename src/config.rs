@@ -42,6 +42,16 @@ pub struct Config {
     pub health_checks: Option<HealthChecks>,
 }
 
+impl Config {
+    pub fn svid_file_name(&self) -> &str {
+        self.svid_file_name.as_deref().unwrap_or("svid.pem")
+    }
+
+    pub fn svid_key_file_name(&self) -> &str {
+        self.svid_key_file_name.as_deref().unwrap_or("svid_key.pem")
+    }
+}
+
 pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read config file: {}", path.display()))?;
@@ -62,8 +72,8 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
         daemon_mode: None,
         add_intermediates_to_bundle: None,
         renew_signal: None,
-        svid_file_name: None,
-        svid_key_file_name: None,
+        svid_file_name: Some("svid.pem".to_string()),
+        svid_key_file_name: Some("svid_key.pem".to_string()),
         svid_bundle_file_name: None,
         jwt_svids: None,
         jwt_bundle_file_name: None,
@@ -105,10 +115,14 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
                     config.renew_signal = extract_string(val)?;
                 }
                 "svid_file_name" => {
-                    config.svid_file_name = extract_string(val)?;
+                    if let Some(s) = extract_string(val)? {
+                        config.svid_file_name = Some(s);
+                    }
                 }
                 "svid_key_file_name" => {
-                    config.svid_key_file_name = extract_string(val)?;
+                    if let Some(s) = extract_string(val)? {
+                        config.svid_key_file_name = Some(s);
+                    }
                 }
                 "svid_bundle_file_name" => {
                     config.svid_bundle_file_name = extract_string(val)?;
@@ -967,6 +981,9 @@ mod tests {
         assert_eq!(config.agent_address, None);
         assert_eq!(config.cmd, None);
         assert_eq!(config.daemon_mode, None);
+        // Defaults
+        assert_eq!(config.svid_file_name, Some("svid.pem".to_string()));
+        assert_eq!(config.svid_key_file_name, Some("svid_key.pem".to_string()));
     }
 
     #[test]
@@ -1114,5 +1131,21 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a number"));
+    }
+
+    #[test]
+    fn test_config_svid_file_name_accessors() {
+        let mut config = Config::default();
+
+        // Test defaults (since Default trait doesn't set defaults in fields automatically, we check behavior with None)
+        assert_eq!(config.svid_file_name(), "svid.pem");
+        assert_eq!(config.svid_key_file_name(), "svid_key.pem");
+
+        // Test with explicit values
+        config.svid_file_name = Some("custom.pem".to_string());
+        config.svid_key_file_name = Some("custom_key.pem".to_string());
+
+        assert_eq!(config.svid_file_name(), "custom.pem");
+        assert_eq!(config.svid_key_file_name(), "custom_key.pem");
     }
 }
