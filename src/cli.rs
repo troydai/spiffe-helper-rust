@@ -1,21 +1,6 @@
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 
 pub const DEFAULT_CONFIG_FILE: &str = "helper.conf";
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-pub enum DaemonModeFlag {
-    True,
-    False,
-}
-
-impl DaemonModeFlag {
-    pub fn to_bool(self) -> bool {
-        match self {
-            Self::True => true,
-            Self::False => false,
-        }
-    }
-}
 
 /// SPIFFE Helper - A utility for fetching X.509 SVID certificates from the SPIFFE Workload API
 #[derive(Parser, Debug)]
@@ -27,8 +12,8 @@ pub struct Args {
     pub config: String,
 
     /// Boolean true or false. Overrides `daemon_mode` in the config file.
-    #[arg(long, value_enum)]
-    pub daemon_mode: Option<DaemonModeFlag>,
+    #[arg(long, value_parser = clap::value_parser!(bool), value_name = "BOOL")]
+    pub daemon_mode: Option<bool>,
 
     /// Print version number
     #[arg(short = 'v', long)]
