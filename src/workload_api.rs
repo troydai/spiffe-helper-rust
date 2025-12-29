@@ -645,7 +645,10 @@ fPfrHw1nYcPliVB4Zbv8d1w=
 
     /// Helper function to generate a test X509Svid with a specific validity duration
     fn generate_test_svid(validity_duration: std::time::Duration) -> X509Svid {
-        use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+        use rcgen::{
+            CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
+            SanType,
+        };
 
         let mut params = CertificateParams::default();
         params.distinguished_name.push(DnType::CommonName, "test");
@@ -653,12 +656,22 @@ fPfrHw1nYcPliVB4Zbv8d1w=
             .subject_alt_names
             .push(SanType::URI("spiffe://localhost/test".try_into().unwrap()));
 
+        // Add required key usage extensions for SPIFFE SVIDs
+        params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyEncipherment,
+        ];
+        params.extended_key_usages = vec![
+            ExtendedKeyUsagePurpose::ServerAuth,
+            ExtendedKeyUsagePurpose::ClientAuth,
+        ];
+
+        // Add Basic Constraints extension (required for SPIFFE SVIDs)
+        params.is_ca = IsCa::ExplicitNoCa;
+
         // Set validity period
         let now = std::time::SystemTime::now();
-        let not_before = now
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let not_before = now.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let not_after = not_before + validity_duration.as_secs();
         params.not_before = time::OffsetDateTime::from_unix_timestamp(not_before as i64).unwrap();
         params.not_after = time::OffsetDateTime::from_unix_timestamp(not_after as i64).unwrap();
@@ -674,13 +687,29 @@ fPfrHw1nYcPliVB4Zbv8d1w=
 
     /// Helper function to generate an expired test X509Svid
     fn generate_expired_test_svid() -> X509Svid {
-        use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+        use rcgen::{
+            CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
+            SanType,
+        };
 
         let mut params = CertificateParams::default();
         params.distinguished_name.push(DnType::CommonName, "test");
         params
             .subject_alt_names
             .push(SanType::URI("spiffe://localhost/test".try_into().unwrap()));
+
+        // Add required key usage extensions for SPIFFE SVIDs
+        params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyEncipherment,
+        ];
+        params.extended_key_usages = vec![
+            ExtendedKeyUsagePurpose::ServerAuth,
+            ExtendedKeyUsagePurpose::ClientAuth,
+        ];
+
+        // Add Basic Constraints extension (required for SPIFFE SVIDs)
+        params.is_ca = IsCa::ExplicitNoCa;
 
         // Set validity period in the past
         let past = time::OffsetDateTime::now_utc() - time::Duration::hours(2);
