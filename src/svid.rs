@@ -33,8 +33,8 @@ pub async fn fetch_x509_certificate(config: &Config) -> Result<()> {
     workload_api::fetch_and_write_x509_svid(
         agent_address,
         &cert_dir_path,
-        config.svid_file_name.as_deref(),
-        config.svid_key_file_name.as_deref(),
+        config.svid_file_name(),
+        config.svid_key_file_name(),
     )
     .await
     .with_context(|| "Failed to fetch X.509 certificate")?;

@@ -28,8 +28,8 @@ const UDS_PREFIX: &str = "unix://";
 pub async fn fetch_and_write_x509_svid(
     agent_address: &str,
     cert_dir: &Path,
-    svid_file_name: Option<&str>,
-    svid_key_file_name: Option<&str>,
+    svid_file_name: &str,
+    svid_key_file_name: &str,
 ) -> Result<()> {
     // Create cert directory if it doesn't exist
     fs::create_dir_all(cert_dir)
@@ -39,18 +39,20 @@ pub async fn fetch_and_write_x509_svid(
     let source = create_x509_source(agent_address).await?;
 
     // Get the SVID from the source
-    let svid: X509Svid = source
+    let svid_opt = source
         .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?;
+
+    // Explicitly annotate type X509Svid to resolve type inference error
+    let svid: X509Svid = if let Some(s) = svid_opt {
+        s
+    } else {
+        return Err(anyhow::anyhow!("X509Source returned no SVID (None)"));
+    };
 
     // Determine file paths
-    // Default file names are now handled in the config module, but we keep this as a fallback
-    // if called directly with None
-    let cert_file_name = svid_file_name.unwrap_or("svid.pem");
-    let key_file_name = svid_key_file_name.unwrap_or("svid_key.pem");
-    let cert_path = cert_dir.join(cert_file_name);
-    let key_path = cert_dir.join(key_file_name);
+    let cert_path = cert_dir.join(svid_file_name);
+    let key_path = cert_dir.join(svid_key_file_name);
 
     // Write certificate (PEM format)
     let cert_pem = svid
@@ -165,7 +167,9 @@ mod tests {
         let start = Instant::now();
         // Use an address that is definitely invalid and shouldn't trigger "PermissionDenied"
         // "invalid" scheme usually causes an immediate parsing or argument error
-        let result = fetch_and_write_x509_svid("invalid://address", cert_dir, None, None).await;
+        let result =
+            fetch_and_write_x509_svid("invalid://address", cert_dir, "svid.pem", "svid_key.pem")
+                .await;
         let duration = start.elapsed();
 
         assert!(result.is_err());
@@ -183,7 +187,9 @@ mod tests {
         let cert_dir = temp_dir.path();
 
         // Test with invalid agent address
-        let result = fetch_and_write_x509_svid("invalid://address", cert_dir, None, None).await;
+        let result =
+            fetch_and_write_x509_svid("invalid://address", cert_dir, "svid.pem", "svid_key.pem")
+                .await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -204,9 +210,13 @@ mod tests {
         let cert_dir = temp_dir.path();
 
         // Test with non-existent unix socket
-        let result =
-            fetch_and_write_x509_svid("unix:///tmp/nonexistent-socket.sock", cert_dir, None, None)
-                .await;
+        let result = fetch_and_write_x509_svid(
+            "unix:///tmp/nonexistent-socket.sock",
+            cert_dir,
+            "svid.pem",
+            "svid_key.pem",
+        )
+        .await;
 
         assert!(result.is_err());
         // Should fail when trying to connect to non-existent socket
@@ -225,8 +235,8 @@ mod tests {
         let result = fetch_and_write_x509_svid(
             "unix:///tmp/nonexistent-socket.sock",
             cert_dir,
-            Some("custom_cert.pem"),
-            Some("custom_key.pem"),
+            "custom_cert.pem",
+            "custom_key.pem",
         )
         .await;
 
