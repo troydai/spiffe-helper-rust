@@ -27,7 +27,7 @@ pub async fn run(config: Config) -> Result<()> {
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write
-    perform_initial_fetch(&source, &config).await?;
+    fetch_and_process_update(&source, &config).await?;
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
@@ -67,7 +67,7 @@ pub async fn run(config: Config) -> Result<()> {
                  }
 
                  println!("Received X.509 update notification");
-                 if let Err(e) = handle_update_notification(&source, &config).await {
+                 if let Err(e) = fetch_and_process_update(&source, &config).await {
                      eprintln!("Failed to handle X.509 update: {}", e);
                  }
             }
@@ -109,21 +109,7 @@ pub async fn run(config: Config) -> Result<()> {
     result
 }
 
-async fn perform_initial_fetch(source: &Arc<X509Source>, config: &Config) -> Result<()> {
-    let svid = source
-        .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
-        .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
-
-    let bundle = source
-        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
-        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
-        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
-
-    workload_api::on_x509_update(&svid, &bundle, config).await
-}
-
-async fn handle_update_notification(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+async fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
     let svid = source
         .get_svid()
         .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
