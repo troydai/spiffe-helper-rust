@@ -24,6 +24,8 @@ spiffe = "0.4"
 pem = "1.1"
 tonic = "0.9"
 tokio-retry = "0.3.0"
+time = "0.3"
+x509-parser = "0.17"
 
 [dev-dependencies]
 tempfile = "3.8"
