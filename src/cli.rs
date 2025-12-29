@@ -40,9 +40,9 @@ pub struct Args {
 }
 
 fn validate_agent_address(v: &str) -> Result<String, String> {
-    if v.starts_with("unix://") {
-        Ok(v.to_string())
-    } else {
-        Err(String::from("Agent address must start with 'unix://'"))
+    if !v.starts_with("unix://") {
+        return Err(String::from("Agent address must start with 'unix://'"));
     }
+
+    Ok(v.to_string())
 }
