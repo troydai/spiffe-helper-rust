@@ -1498,6 +1498,7 @@ dependencies = [
  "tonic",
  "tower 0.4.13",
  "tower-http",
+ "x509-parser",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
-use anyhow::{Context, Result};
 use crate::config::Config;
+use anyhow::{Context, Result};
+use pem::{encode, parse, Pem};
 use spiffe::bundle::x509::X509Bundle;
 use spiffe::svid::x509::X509Svid;
 use spiffe::svid::SvidSource;
@@ -8,9 +9,10 @@ use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::RetryIf;
+use x509_parser::prelude::*;
 
 const UDS_PREFIX: &str = "unix://";
 
@@ -68,8 +70,8 @@ pub async fn write_svid_to_files(
         .cert_chain()
         .iter()
         .map(|cert| {
-            pem::encode(&pem::Pem {
-                tag: "CERTIFICATE".to_string(),
+            encode(&Pem {
+                label: "CERTIFICATE".to_string(),
                 contents: cert.as_ref().to_vec(),
             })
         })
@@ -80,8 +82,8 @@ pub async fn write_svid_to_files(
         .with_context(|| format!("Failed to write certificate to {}", cert_path.display()))?;
 
     // Write private key (PEM format)
-    let key_pem = pem::encode(&pem::Pem {
-        tag: "PRIVATE KEY".to_string(),
+    let key_pem = encode(&Pem {
+        label: "PRIVATE KEY".to_string(),
         contents: svid.private_key().as_ref().to_vec(),
     });
 
@@ -92,26 +94,69 @@ pub async fn write_svid_to_files(
 }
 
 /// Handler for X509Context updates
-pub async fn on_x509_update(
-    svid: &X509Svid,
-    _bundle: &X509Bundle,
-    config: &Config,
-) -> Result<()> {
+pub async fn on_x509_update(svid: &X509Svid, _bundle: &X509Bundle, config: &Config) -> Result<()> {
     if let Some(cert_dir) = &config.cert_dir {
         let cert_dir = Path::new(cert_dir);
         let svid_file_name = config.svid_file_name();
         let svid_key_file_name = config.svid_key_file_name();
 
         write_svid_to_files(svid, cert_dir, svid_file_name, svid_key_file_name).await?;
-        
+
         // Future: write bundle
         // Future: signal process
     }
-    
+
     // Log the update
     eprintln!("Updated X.509 SVID: {}", svid.spiffe_id());
-    
+
     Ok(())
+}
+
+/// Calculate when to refresh the certificate
+/// Returns half the time until expiry, with minimum/maximum bounds
+pub fn calculate_refresh_interval(svid: &X509Svid) -> Duration {
+    calculate_refresh_interval_at(svid, SystemTime::now())
+}
+
+fn calculate_refresh_interval_at(svid: &X509Svid, now: SystemTime) -> Duration {
+    let cert = svid
+        .cert_chain()
+        .first()
+        .expect("SVID must have at least one certificate");
+
+    // Parse the certificate from DER to get access to validity
+    let (_, x509_cert) = X509Certificate::from_der(cert.as_ref())
+        .map_err(|e| anyhow::anyhow!("Failed to parse certificate DER: {:?}", e))
+        .expect("Failed to parse certificate");
+
+    // x509_parser::time::ASN1Time::timestamp() returns i64 (seconds since epoch)
+    let not_after = x509_cert.validity().not_after.timestamp();
+
+    let now_secs = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_secs() as i64;
+
+    let seconds_until_expiry = if not_after > now_secs {
+        (not_after - now_secs) as u64
+    } else {
+        0
+    };
+
+    let time_until_expiry = Duration::from_secs(seconds_until_expiry);
+
+    if time_until_expiry.is_zero() {
+        return Duration::ZERO;
+    }
+
+    // Refresh at half the remaining lifetime
+    let refresh_interval = time_until_expiry / 2;
+
+    // Apply reasonable bounds
+    const MIN_REFRESH: Duration = Duration::from_secs(60); // 1 minute minimum
+    const MAX_REFRESH: Duration = Duration::from_secs(3600); // 1 hour maximum
+
+    refresh_interval.clamp(MIN_REFRESH, MAX_REFRESH)
 }
 
 /// Creates an X509Source for continuous X.509 certificate watching.
@@ -423,7 +468,7 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
-        
+
         // Self-signed cert (with SAN) and key for testing
         let cert_pem = r#"-----BEGIN CERTIFICATE-----
 MIIDsjCCApqgAwIBAgIUdSDbCP50csvka2qEZDl7ZzdTTfswDQYJKoZIhvcNAQEL
@@ -477,18 +522,141 @@ nwJjWbaapHaSBIup3HE/+z8pSlK7tGvtOXmExxLYAF6ET+1Di0rlSoh8ePEhuoA1
 Gkd9+8VebP00iWI2zrFdgXE4
 -----END PRIVATE KEY-----"#;
 
-        let cert_pem_parsed = pem::parse(cert_pem).expect("Failed to parse cert PEM");
-        let key_pem_parsed = pem::parse(key_pem).expect("Failed to parse key PEM");
-        
-        let svid = X509Svid::parse_from_der(&cert_pem_parsed.contents, &key_pem_parsed.contents).expect("Failed to parse SVID");
-        
-        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem").await.expect("Failed to write files");
-        
+        let cert_pem_parsed = parse(cert_pem).expect("Failed to parse cert PEM");
+        let key_pem_parsed = parse(key_pem).expect("Failed to parse key PEM");
+
+        let svid = X509Svid::parse_from_der(&cert_pem_parsed.contents, &key_pem_parsed.contents)
+            .expect("Failed to parse SVID");
+
+        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem")
+            .await
+            .expect("Failed to write files");
+
         let saved_cert = fs::read_to_string(cert_dir.join("svid.pem")).unwrap();
         let saved_key = fs::read_to_string(cert_dir.join("svid_key.pem")).unwrap();
-        
+
         // Ensure they contain the PEM headers
         assert!(saved_cert.contains("CERTIFICATE"));
         assert!(saved_key.contains("PRIVATE KEY"));
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval() {
+        use spiffe::svid::x509::X509Svid;
+        use std::time::{Duration, SystemTime};
+
+        // Self-signed cert with SAN
+        let cert_pem = r#"-----BEGIN CERTIFICATE-----
+MIIDsjCCApqgAwIBAgIUdSDbCP50csvka2qEZDl7ZzdTTfswDQYJKoZIhvcNAQEL
+BQAwTjELMAkGA1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5
+MQwwCgYDVQQKDANPcmcxEjAQBgNVBAMMCWxvY2FsaG9zdDAeFw0yNTEyMjkwMDI5
+MjNaFw0yNjEyMjkwMDI5MjNaME4xCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVTdGF0
+ZTENMAsGA1UEBwwEQ2l0eTEMMAoGA1UECgwDT3JnMRIwEAYDVQQDDAlsb2NhbGhv
+c3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDBQIhUXd1gXpuLtHlB
+8tXDGYQ63sdlvnWrCOxfKBW1yhNUEDQbF0e+Ij/wrHMiyY9P6I2cxty6LxFCp33g
+jUeUJhV+2eEkHxsWBP6AnJ2x30i5LmkDQNDr7fVtMAjckHUN16I3f3Q5ntJ2E55U
+VR1Tx7bNTKKfd0zRt3AaQF4OKiVROggxriFZxlWlKW4CyXVzv7bLKwuEYSuwgAFw
+raM3YfRJZDd+IhJDg7Sku9HBQoVzAh8LdlTdoaZd5AEUrz+PXfw5T+Guqm4T1ckW
+BLiHKsShZkNIGiQDIhN/GJpJ2BwymdMi0fc3Krlu2sqtZXOiMsuyjbIDoIDlEWEE
+L6ulAgMBAAGjgYcwgYQwDgYDVR0PAQH/BAQDAgWgMB0GA1UdJQQWMBQGCCsGAQUF
+BwMBBggrBgEFBQcDAjAJBgNVHRMEAjAAMCkGA1UdEQQiMCCGHnNwaWZmZTovL2V4
+YW1wbGUub3JnL215c2VydmljZTAdBgNVHQ4EFgQUqCNQRmkVxf7dHBK13TUWnAkE
+CGMwDQYJKoZIhvcNAQELBQADggEBAFWq3lRoRIFfS7SvnOIVBq0o3xBkN9umxgHE
+PcjEPe9O1PWrEMFAtikQCVDsWE89YIwRfMUoctleO4wD/WgtehQUDnnGPOLTkfi2
++gpLm3j/lRw4MuCGNgT04XQqeD/RWkVMfrTri/dDXruKEAat97T4AgfChwIhSgWE
+YcKShkPHnnQjrPoItWhUbJpixcJ3MUbdgC3X958V062+g2HsiuTRZzd1BEsMjl22
+guDNG4ScLWIW4wxNHcOfy8+j5dnPUHw/bhhg1XWnEV9nM5crF5vYfH5X9iWaufAy
+SCSKvFpIqm/RGkdnQVU+AMMFItoF4stiF109YJFUaYttYio0Upw=
+-----END CERTIFICATE-----"#;
+
+        let key_pem = r#"-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDBQIhUXd1gXpuL
+tHlB8tXDGYQ63sdlvnWrCOxfKBW1yhNUEDQbF0e+Ij/wrHMiyY9P6I2cxty6LxFC
+p33gjUeUJhV+2eEkHxsWBP6AnJ2x30i5LmkDQNDr7fVtMAjckHUN16I3f3Q5ntJ2
+E55UVR1Tx7bNTKKfd0zRt3AaQF4OKiVROggxriFZxlWlKW4CyXVzv7bLKwuEYSuw
+gAFwraM3YfRJZDd+IhJDg7Sku9HBQoVzAh8LdlTdoaZd5AEUrz+PXfw5T+Guqm4T
+1ckWBLiHKsShZkNIGiQDIhN/GJpJ2BwymdMi0fc3Krlu2sqtZXOiMsuyjbIDoIDl
+EWEEL6ulAgMBAAECggEAHIZTeSx/tC1SxUzGxzK6Vblq+KuQgBacVLoU9bi7d6FT
+uAlKP6NwjgKNMI+r0PsyYaegW39I7lxrLkz9ugrwgVAbxSUQ492JiHcFP+OeLTaZ
+i+frTTUggWqW2t6HuFLETF5DTfDMrYKhaxdbO/RyRz8H3wbMTEB2QNBURjOxDmLs
+9mhxNbg26G4LeCqCoqRkNuqFWxMRfpBq/63BLoOB8K/5tqQkqimNKNf1RQQtjKx+
+xe+d37XEs3K8MUfbmCU5atizHMbqjzlFdyZoFM0XzmnNTaXtebWrNfqxeW1odC9Y
+HgFJ73QfTwpUgj33iY2XW1qukxuCC7SMyzz3OsBeQwKBgQD9TZ+T89B9L2rCV87j
+pcPRbobHdwwB3/9AD4IffBxyUdpcWpMUAxQyn3HEgbmEzr6E6Jf2RhCTn10vNoAa
+PcsVDjA/MiUEnePUF6KCkC8rgV/aRNR5B1YGQvg7m9nI4OOOE4D77Cv32DVtUfUD
+4QRcnf7sLfyM2Dd6bliexV73FwKBgQDDTz14MZoJFRGSQ7VDtqsVorrurX4KsnoX
++uWKFmxC+shTwiZAixlS8pKTqKdhr5LZj5rD+V5+KhO6aW4RNVHfADP4xW4SxUdA
+YUUXyCKf5C4wi6tdQdWEt+Veahv7Mbrr9CleemGzOsPSTAR3q5mh+wgkpcORgfwg
+Ld9e5MFoowKBgQDl9lTL02wSWrwHmARB9Dokpr1B1ThXc26eT/YIc3q35svhUHF6
+l5j8pHh6uHMeuTuKGkfr04w1GVdWB5qhODxo7yqqFPI6kMVHxfVJp3DLhHbrB9YF
+0r0sjhwisck0b8bnM5nEHJOGPQm0J9XTIbP+CYpoDQ/dJmanhgp6iiE/HQKBgGJW
+tZadMve7ufsxSEVt5jqgkwq2JC5yqvMECys6GwymhNNXgDcjUn7nUFI0qwKOipws
+qDpghulzejdz+k2D0VM9IO3zSnb9CeEqmMVeqcBj/bXHvWLZUQ7gIQcm2iviYEGJ
+0IKXkDXUMuDiEaXHqzVZ1kHNjOjoz+/L6Ro4iAGNAoGBAPAa1H7cRk6yH58MXYlz
+XjzwwwOewgCko0L1a2UsmD7s2/YnPvkyIXLMY4WXrxX+svQ2/M2ypeRgf0yXo47u
+nwJjWbaapHaSBIup3HE/+z8pSlK7tGvtOXmExxLYAF6ET+1Di0rlSoh8ePEhuoA1
+Gkd9+8VebP00iWI2zrFdgXE4
+-----END PRIVATE KEY-----"#;
+
+        let cert_pem_parsed = parse(cert_pem).expect("Failed to parse cert PEM");
+        let key_pem_parsed = parse(key_pem).expect("Failed to parse key PEM");
+        let svid = X509Svid::parse_from_der(&cert_pem_parsed.contents, &key_pem_parsed.contents)
+            .expect("Failed to parse SVID");
+
+        let cert_der = svid.cert_chain().first().unwrap().as_ref();
+        let (_, x509_cert) =
+            X509Certificate::from_der(cert_der).expect("Failed to parse cert in test");
+        let expiry_ts = x509_cert.validity().not_after.timestamp();
+
+        let expiry = SystemTime::UNIX_EPOCH + Duration::from_secs(expiry_ts as u64);
+
+        // Case 1: Long time until expiry (20 hours)
+        // Refresh should be clamped to MAX (1 hour)
+        let now_long = expiry - Duration::from_secs(20 * 3600);
+        let interval = calculate_refresh_interval_at(&svid, now_long);
+        assert_eq!(
+            interval,
+            Duration::from_secs(3600),
+            "Should clamp to max refresh (1h)"
+        );
+
+        // Case 2: Short time until expiry (90 seconds)
+        // Remaining: 90s. Half: 45s. Clamp MIN: 60s.
+        let now_short = expiry - Duration::from_secs(90);
+        let interval = calculate_refresh_interval_at(&svid, now_short);
+        assert_eq!(
+            interval,
+            Duration::from_secs(60),
+            "Should clamp to min refresh (60s)"
+        );
+
+        // Case 3: Medium time (4 hours)
+        // Remaining: 4h. Half: 2h. Clamp MAX: 1h.
+        let now_med = expiry - Duration::from_secs(4 * 3600);
+        let interval = calculate_refresh_interval_at(&svid, now_med);
+        assert_eq!(
+            interval,
+            Duration::from_secs(3600),
+            "Should clamp to max refresh (1h)"
+        );
+
+        // Case 4: Perfect sweet spot (30 minutes)
+        // Remaining: 30m. Half: 15m (900s). Within bounds [60, 3600].
+        let now_sweet = expiry - Duration::from_secs(1800);
+        let interval = calculate_refresh_interval_at(&svid, now_sweet);
+        assert_eq!(
+            interval,
+            Duration::from_secs(900),
+            "Should be half of remaining time"
+        );
+
+        // Case 5: Expired
+        let now_expired = expiry + Duration::from_secs(10);
+        let interval = calculate_refresh_interval_at(&svid, now_expired);
+        assert_eq!(
+            interval,
+            Duration::ZERO,
+            "Should return zero for expired cert"
+        );
     }
 }
