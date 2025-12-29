@@ -15,6 +15,10 @@ data:
         data_dir = "/run/spire/data"
         log_level = "DEBUG"
         log_format = "text"
+
+        # Short TTL for integration testing - certificates rotate at ~half TTL
+        # 2 minute TTL means rotation happens around 1 minute
+        default_x509_svid_ttl = "120s"
     }
 
     plugins {
