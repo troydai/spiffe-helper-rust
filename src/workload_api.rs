@@ -47,7 +47,7 @@ pub async fn fetch_and_write_x509_svid(
 }
 
 /// Writes the X.509 SVID to the specified directory.
-pub async fn write_svid_to_files(
+async fn write_svid_to_files(
     svid: &X509Svid,
     cert_dir: &Path,
     svid_file_name: &str,
