@@ -2,7 +2,7 @@
 name = "spiffe-helper-rust"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.92.0"
+rust-version = "1.82.0"
 
 [lib]
 name = "spiffe_helper_rust"
@@ -28,5 +28,7 @@ tonic = "0.9"
 tokio-retry = "0.3.0"
 
 [dev-dependencies]
+rcgen = "0.14.6"
 tempfile = "3.8"
+time = "0.3.44"
 

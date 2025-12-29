@@ -7,13 +7,70 @@ use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::RetryIf;
 
 use crate::config::Config;
 
 const UDS_PREFIX: &str = "unix://";
+
+/// Minimum refresh interval to avoid excessive refresh attempts
+const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Maximum refresh interval to ensure we don't wait too long to detect issues
+const MAX_REFRESH_INTERVAL: Duration = Duration::from_secs(3600);
+
+/// Calculate when to refresh the certificate based on its expiry time.
+///
+/// The refresh interval is calculated as half the time until certificate expiry,
+/// clamped between minimum and maximum bounds. This ensures certificates are
+/// renewed well before they expire, providing a safety margin for any issues
+/// during renewal.
+///
+/// # Algorithm
+///
+/// - If the certificate is already expired, returns `Duration::ZERO` to trigger immediate refresh
+/// - Otherwise, returns `(NotAfter - Now) / 2`, clamped to `[MIN_REFRESH_INTERVAL, MAX_REFRESH_INTERVAL]`
+///
+/// # Arguments
+///
+/// * `svid` - The X.509 SVID containing the certificate to analyze
+///
+/// # Returns
+///
+/// A `Duration` representing when the next refresh should occur.
+pub fn calculate_refresh_interval(svid: &X509Svid) -> Duration {
+    // Parse the certificate to extract the NotAfter timestamp
+    let not_after_timestamp = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert.validity().not_after.timestamp(),
+        Err(_) => {
+            // If we can't parse the certificate, return minimum interval for safety
+            return MIN_REFRESH_INTERVAL;
+        }
+    };
+
+    // Get current time as Unix timestamp
+    let now_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Calculate time until expiry
+    let time_until_expiry_secs = not_after_timestamp - now_timestamp;
+
+    // Handle expired certificates
+    if time_until_expiry_secs <= 0 {
+        return Duration::ZERO;
+    }
+
+    // Calculate refresh interval as half the remaining lifetime
+    let refresh_interval_secs = time_until_expiry_secs / 2;
+    let refresh_interval = Duration::from_secs(refresh_interval_secs as u64);
+
+    // Apply bounds
+    refresh_interval.clamp(MIN_REFRESH_INTERVAL, MAX_REFRESH_INTERVAL)
+}
 
 /// Fetches X.509 SVID (certificate and key) from the SPIRE agent
 /// and writes them to the specified directory.
@@ -584,5 +641,140 @@ fPfrHw1nYcPliVB4Zbv8d1w=
 
         let written_bundle = fs::read_to_string(bundle_path).unwrap();
         assert!(written_bundle.contains("BEGIN CERTIFICATE"));
+    }
+
+    /// Helper function to generate a test X509Svid with a specific validity duration
+    fn generate_test_svid(validity_duration: std::time::Duration) -> X509Svid {
+        use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+
+        let mut params = CertificateParams::default();
+        params.distinguished_name.push(DnType::CommonName, "test");
+        params
+            .subject_alt_names
+            .push(SanType::URI("spiffe://localhost/test".try_into().unwrap()));
+
+        // Set validity period
+        let now = std::time::SystemTime::now();
+        let not_before = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let not_after = not_before + validity_duration.as_secs();
+        params.not_before = time::OffsetDateTime::from_unix_timestamp(not_before as i64).unwrap();
+        params.not_after = time::OffsetDateTime::from_unix_timestamp(not_after as i64).unwrap();
+
+        let key_pair = KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key_pair).unwrap();
+
+        let cert_der = cert.der().to_vec();
+        let key_der = key_pair.serialize_der();
+
+        X509Svid::parse_from_der(&cert_der, &key_der).expect("Failed to parse test SVID")
+    }
+
+    /// Helper function to generate an expired test X509Svid
+    fn generate_expired_test_svid() -> X509Svid {
+        use rcgen::{CertificateParams, DnType, KeyPair, SanType};
+
+        let mut params = CertificateParams::default();
+        params.distinguished_name.push(DnType::CommonName, "test");
+        params
+            .subject_alt_names
+            .push(SanType::URI("spiffe://localhost/test".try_into().unwrap()));
+
+        // Set validity period in the past
+        let past = time::OffsetDateTime::now_utc() - time::Duration::hours(2);
+        let past_end = past + time::Duration::hours(1);
+        params.not_before = past;
+        params.not_after = past_end;
+
+        let key_pair = KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key_pair).unwrap();
+
+        let cert_der = cert.der().to_vec();
+        let key_der = key_pair.serialize_der();
+
+        X509Svid::parse_from_der(&cert_der, &key_der).expect("Failed to parse test SVID")
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_normal_certificate() {
+        // Certificate valid for 2 hours = 7200 seconds
+        // Half of that is 3600 seconds = 1 hour
+        // 1 hour is the max, so should clamp to MAX_REFRESH_INTERVAL
+        let svid = generate_test_svid(Duration::from_secs(7200));
+        let interval = calculate_refresh_interval(&svid);
+
+        // Should be clamped to max (1 hour)
+        assert_eq!(interval, MAX_REFRESH_INTERVAL);
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_short_lived_certificate() {
+        // Certificate valid for 30 seconds
+        // Half of that is 15 seconds
+        // 15 seconds is below minimum, so should clamp to MIN_REFRESH_INTERVAL (60s)
+        let svid = generate_test_svid(Duration::from_secs(30));
+        let interval = calculate_refresh_interval(&svid);
+
+        assert_eq!(interval, MIN_REFRESH_INTERVAL);
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_medium_lived_certificate() {
+        // Certificate valid for 10 minutes = 600 seconds
+        // Half of that is 300 seconds = 5 minutes
+        // 5 minutes is between min (60s) and max (3600s), so should be used as-is
+        let svid = generate_test_svid(Duration::from_secs(600));
+        let interval = calculate_refresh_interval(&svid);
+
+        // Should be approximately 300 seconds (half of 600)
+        // Allow a small margin for test execution time
+        assert!(interval >= Duration::from_secs(295));
+        assert!(interval <= Duration::from_secs(305));
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_long_lived_certificate() {
+        // Certificate valid for 24 hours = 86400 seconds
+        // Half of that is 43200 seconds = 12 hours
+        // 12 hours is above max, so should clamp to MAX_REFRESH_INTERVAL (1 hour)
+        let svid = generate_test_svid(Duration::from_secs(86400));
+        let interval = calculate_refresh_interval(&svid);
+
+        assert_eq!(interval, MAX_REFRESH_INTERVAL);
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_expired_certificate() {
+        // Certificate that has already expired
+        let svid = generate_expired_test_svid();
+        let interval = calculate_refresh_interval(&svid);
+
+        // Should return Duration::ZERO for immediate refresh
+        assert_eq!(interval, Duration::ZERO);
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_near_minimum() {
+        // Certificate valid for 120 seconds (2 minutes)
+        // Half of that is 60 seconds = exactly MIN_REFRESH_INTERVAL
+        let svid = generate_test_svid(Duration::from_secs(120));
+        let interval = calculate_refresh_interval(&svid);
+
+        // Should be at or very close to minimum
+        assert!(interval >= MIN_REFRESH_INTERVAL);
+        assert!(interval <= Duration::from_secs(65)); // Allow small margin
+    }
+
+    #[test]
+    fn test_calculate_refresh_interval_at_maximum_boundary() {
+        // Certificate valid for 7200 seconds (2 hours)
+        // Half of that is 3600 seconds = exactly MAX_REFRESH_INTERVAL
+        let svid = generate_test_svid(Duration::from_secs(7200));
+        let interval = calculate_refresh_interval(&svid);
+
+        // Should be exactly at maximum
+        assert_eq!(interval, MAX_REFRESH_INTERVAL);
     }
 }
