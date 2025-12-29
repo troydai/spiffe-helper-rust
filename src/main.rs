@@ -29,6 +29,11 @@ async fn main() -> Result<()> {
         config.daemon_mode = Some(override_value);
     }
 
+    // Override agent_address if provided via CLI
+    if let Some(agent_address) = args.agent_address {
+        config.agent_address = Some(agent_address);
+    }
+
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
     if daemon_mode {

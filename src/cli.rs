@@ -30,6 +30,10 @@ pub struct Args {
     #[arg(long, value_enum)]
     pub daemon_mode: Option<DaemonModeFlag>,
 
+    /// SPIRE agent socket address. Overrides `agent_address` in the config file.
+    #[arg(short, long)]
+    pub agent_address: Option<String>,
+
     /// Print version number
     #[arg(short = 'v', long)]
     pub version: bool,
