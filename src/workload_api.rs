@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use spiffe::svid::x509::X509Svid;
+use spiffe::svid::SvidSource;
 use spiffe::workload_api::client::WorkloadApiClient;
 use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
@@ -33,25 +35,14 @@ pub async fn fetch_and_write_x509_svid(
     fs::create_dir_all(cert_dir)
         .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
 
-    // Fetch X.509 SVID with retries (workload may need time to attest)
-    // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
-    let retry_strategy = ExponentialBackoff::from_millis(1000)
-        .max_delay(Duration::from_secs(16))
-        .take(10);
+    // Use create_x509_source to handle retry logic and connection
+    let source = create_x509_source(agent_address).await?;
 
-    let svid = RetryIf::spawn(
-        retry_strategy,
-        || async {
-            let mut client = create_workload_api_client(agent_address).await?;
-            client
-                .fetch_x509_svid()
-                .await
-                .context("Failed to fetch SVID")
-        },
-        is_retryable_error,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 SVID from SPIRE agent: {e}"))?;
+    // Get the SVID from the source
+    let svid: X509Svid = source
+        .get_svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
 
     // Determine file paths
     // Default file names are now handled in the config module, but we keep this as a fallback
@@ -199,7 +190,7 @@ mod tests {
         // The error message should contain information about failing to create the client
         // It may be "Failed to create WorkloadApiClient" or connection-related errors
         assert!(
-            error_msg.contains("Failed to create WorkloadApiClient")
+            error_msg.contains("Failed to create X509Source")
                 || error_msg.contains("Invalid agent address")
                 || error_msg.contains("Failed to connect")
                 || error_msg.contains("invalid")
