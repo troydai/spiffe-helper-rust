@@ -18,7 +18,7 @@ NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
 TEST_SPIFFE_ID="spiffe://spiffe-helper.local/ns/${NAMESPACE}/sa/test-sa"
 
 # Source color support
-source "${SCRIPT_DIR}/../colors.sh"
+source "${SCRIPT_DIR}/../utility/colors.sh"
 
 # Check if kubectl is available
 if ! command -v kubectl &> /dev/null; then
