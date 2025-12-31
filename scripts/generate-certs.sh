@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Generates CA and SPIRE server certificates for the local development environment.
 set -euo pipefail
 
 # Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/utility/colors.sh"
 
 info() {
   echo -e "${COLOR_CYAN}[certs]${COLOR_RESET} $*"
