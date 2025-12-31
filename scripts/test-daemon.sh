@@ -2,9 +2,9 @@
 set -e
 
 # Test script for spiffe-helper functionality
-# This script tests initContainer behavior through httpbin pods:
-# 1. InitContainer starts and completes successfully
-# 2. Main container starts after initContainer
+# This script tests native sidecar behavior through httpbin pods:
+# 1. Native sidecar (init container with restartPolicy: Always) starts and becomes ready
+# 2. Main container starts alongside the sidecar
 # 3. Pod lifecycle (delete/recreate) works correctly
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,7 +34,7 @@ fi
 
 export KUBECONFIG="$KUBECONFIG_PATH"
 
-echo -e "${GREEN}=== Testing spiffe-helper initContainer via httpbin ===${NC}"
+echo -e "${GREEN}=== Testing spiffe-helper sidecar via httpbin ===${NC}"
 echo ""
 
 # Check if httpbin namespace exists
@@ -59,11 +59,11 @@ if [ -z "$INITIAL_POD" ]; then
 fi
 
 echo "  Found pod: $INITIAL_POD"
-INIT_STATUS=$(kubectl get pod -n "$NAMESPACE" "$INITIAL_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || echo "not-found")
-if [ "$INIT_STATUS" = "Completed" ]; then
-    echo -e "${GREEN}  ✓ InitContainer already completed${NC}"
+SIDE_CAR_STATUS=$(kubectl get pod -n "$NAMESPACE" "$INITIAL_POD" -o jsonpath='{.status.initContainerStatuses[?(@.name=="spiffe-helper")].ready}' 2>/dev/null || echo "false")
+if [ "$SIDE_CAR_STATUS" = "true" ]; then
+    echo -e "${GREEN}  ✓ spiffe-helper sidecar is ready${NC}"
 else
-    echo -e "${YELLOW}  ⚠ InitContainer status: ${INIT_STATUS}${NC}"
+    echo -e "${YELLOW}  ⚠ spiffe-helper sidecar is not ready: ${SIDE_CAR_STATUS}${NC}"
 fi
 
 echo ""
@@ -87,14 +87,14 @@ if [ -z "$NEW_POD" ] || [ "$NEW_POD" = "$INITIAL_POD" ]; then
     exit 1
 fi
 
-# Wait for initContainer to complete
-echo "  Waiting for initContainer to complete..."
+# Wait for spiffe-helper sidecar to be ready
+echo "  Waiting for spiffe-helper sidecar to be ready..."
 for i in {1..30}; do
-    INIT_STATUS=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || echo "running")
+    SIDE_CAR_READY=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.initContainerStatuses[?(@.name=="spiffe-helper")].ready}' 2>/dev/null || echo "false")
     POD_STATUS=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
     
-    if [ "$INIT_STATUS" = "Completed" ]; then
-        echo -e "${GREEN}  ✓ InitContainer completed${NC}"
+    if [ "$SIDE_CAR_READY" = "true" ]; then
+        echo -e "${GREEN}  ✓ spiffe-helper sidecar is ready${NC}"
         break
     fi
     
@@ -107,26 +107,17 @@ for i in {1..30}; do
     sleep 1
 done
 
-if [ "$INIT_STATUS" != "Completed" ]; then
-    echo -e "${RED}Error: InitContainer did not complete within 30 seconds${NC}"
-    kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | grep -A 10 "Init Containers"
+if [ "$SIDE_CAR_READY" != "true" ]; then
+    echo -e "${RED}Error: spiffe-helper sidecar did not become ready within 30 seconds${NC}"
+    kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | grep -A 20 "Containers"
     exit 1
 fi
-
-# Check initContainer exit code
-EXIT_CODE=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "unknown")
-if [ "$EXIT_CODE" != "0" ]; then
-    echo -e "${RED}Error: InitContainer exited with code $EXIT_CODE${NC}"
-    kubectl logs -n "$NAMESPACE" "$NEW_POD" -c spiffe-helper
-    exit 1
-fi
-echo -e "${GREEN}  ✓ InitContainer exited successfully (code: $EXIT_CODE)${NC}"
 
 echo ""
 echo -e "${GREEN}[3/3] Verifying main container started...${NC}"
 # Wait for main container to be ready
 for i in {1..30}; do
-    MAIN_READY=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+    MAIN_READY=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.containerStatuses[?(@.name=="httpbin")].ready}' 2>/dev/null || echo "false")
     POD_STATUS=$(kubectl get pod -n "$NAMESPACE" "$NEW_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
     
     if [ "$MAIN_READY" = "true" ] && [ "$POD_STATUS" = "Running" ]; then
@@ -145,19 +136,19 @@ done
 
 if [ "$MAIN_READY" != "true" ]; then
     echo -e "${RED}Error: Main container not ready within 30 seconds${NC}"
-    kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | grep -A 10 "Containers"
+    kubectl describe pod -n "$NAMESPACE" "$NEW_POD" | grep -A 20 "Containers"
     exit 1
 fi
 
-# Check initContainer logs
+# Check spiffe-helper logs
 echo ""
-echo -e "${GREEN}=== InitContainer Logs ===${NC}"
+echo -e "${GREEN}=== spiffe-helper Sidecar Logs ===${NC}"
 kubectl logs -n "$NAMESPACE" "$NEW_POD" -c spiffe-helper 2>&1 | head -10
 
 echo ""
 echo -e "${GREEN}=== All Tests Passed! ===${NC}"
 echo ""
 echo "Summary:"
-echo "  - InitContainer completed successfully"
-echo "  - Main container started after initContainer"
+echo "  - spiffe-helper sidecar started and became ready"
+echo "  - Main container started and became ready"
 echo "  - Pod lifecycle (delete/recreate) works correctly"
