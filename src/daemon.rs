@@ -18,7 +18,13 @@ pub async fn run(config: Config) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
 
     // Create X509Source (this waits for the first update)
-    let source = workload_api::create_x509_source(config.agent_address()?).await?;
+    let source = workload_api::create_x509_source(
+        config.agent_address()?,
+        config.retry_interval_ms(),
+        config.retry_max_delay_ms(),
+        config.retry_max_attempts(),
+    )
+    .await?;
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write

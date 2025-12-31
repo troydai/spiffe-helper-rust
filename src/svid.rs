@@ -32,6 +32,9 @@ pub async fn fetch_x509_certificate(config: &Config, agent_address: &str) -> Res
         &cert_dir_path,
         config.svid_file_name(),
         config.svid_key_file_name(),
+        config.retry_interval_ms(),
+        config.retry_max_delay_ms(),
+        config.retry_max_attempts(),
     )
     .await
     .with_context(|| "Failed to fetch X.509 certificate")?;

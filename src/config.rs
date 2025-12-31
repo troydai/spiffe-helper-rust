@@ -40,6 +40,9 @@ pub struct Config {
     pub hint: Option<String>,
     pub omit_expired: Option<bool>,
     pub health_checks: Option<HealthChecks>,
+    pub retry_interval_ms: Option<u64>,
+    pub retry_max_delay_ms: Option<u64>,
+    pub retry_max_attempts: Option<usize>,
 }
 
 impl Config {
@@ -61,6 +64,18 @@ impl Config {
         self.agent_address
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))
+    }
+
+    pub fn retry_interval_ms(&self) -> u64 {
+        self.retry_interval_ms.unwrap_or(1000)
+    }
+
+    pub fn retry_max_delay_ms(&self) -> u64 {
+        self.retry_max_delay_ms.unwrap_or(16000)
+    }
+
+    pub fn retry_max_attempts(&self) -> usize {
+        self.retry_max_attempts.unwrap_or(10)
     }
 }
 
@@ -97,6 +112,9 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
         hint: None,
         omit_expired: None,
         health_checks: None,
+        retry_interval_ms: None,
+        retry_max_delay_ms: None,
+        retry_max_attempts: None,
     };
 
     if let hcl::Value::Object(attrs) = value {
@@ -169,6 +187,15 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
                 "health_checks" => {
                     config.health_checks = extract_health_checks(val)?;
                 }
+                "retry_interval_ms" => {
+                    config.retry_interval_ms = extract_u64(val)?;
+                }
+                "retry_max_delay_ms" => {
+                    config.retry_max_delay_ms = extract_u64(val)?;
+                }
+                "retry_max_attempts" => {
+                    config.retry_max_attempts = extract_usize(val)?;
+                }
                 _ => {
                     // Ignore unknown keys
                 }
@@ -192,6 +219,22 @@ fn extract_bool(val: &hcl::Value) -> anyhow::Result<Option<bool>> {
         Ok(Some(*b))
     } else {
         Err(anyhow!("given value is not a boolean"))
+    }
+}
+
+fn extract_u64(val: &hcl::Value) -> anyhow::Result<Option<u64>> {
+    if let Some(num) = val.as_u64() {
+        Ok(Some(num))
+    } else {
+        Err(anyhow!("given value is not a number"))
+    }
+}
+
+fn extract_usize(val: &hcl::Value) -> anyhow::Result<Option<usize>> {
+    if let Some(num) = val.as_u64() {
+        Ok(Some(num as usize))
+    } else {
+        Err(anyhow!("given value is not a number"))
     }
 }
 

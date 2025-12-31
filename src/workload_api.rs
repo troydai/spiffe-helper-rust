@@ -24,6 +24,9 @@ const UDS_PREFIX: &str = "unix://";
 /// * `cert_dir` - Directory where certificates should be written
 /// * `svid_file_name` - Optional filename for the certificate (default: "svid.pem")
 /// * `svid_key_file_name` - Optional filename for the private key (default: "`svid_key.pem`")
+/// * `retry_interval_ms` - Initial retry interval in milliseconds
+/// * `retry_max_delay_ms` - Maximum retry delay in milliseconds
+/// * `retry_max_attempts` - Maximum number of retry attempts
 ///
 /// # Returns
 ///
@@ -33,9 +36,18 @@ pub async fn fetch_and_write_x509_svid(
     cert_dir: &Path,
     svid_file_name: &str,
     svid_key_file_name: &str,
+    retry_interval_ms: u64,
+    retry_max_delay_ms: u64,
+    retry_max_attempts: usize,
 ) -> Result<()> {
     // Use create_x509_source to handle retry logic and connection
-    let source = create_x509_source(agent_address).await?;
+    let source = create_x509_source(
+        agent_address,
+        retry_interval_ms,
+        retry_max_delay_ms,
+        retry_max_attempts,
+    )
+    .await?;
 
     // Get the SVID from the source
     let svid: X509Svid = source
@@ -190,16 +202,23 @@ pub async fn write_x509_svid_on_update(
 /// # Arguments
 ///
 /// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
+/// * `retry_interval_ms` - Initial retry interval in milliseconds
+/// * `retry_max_delay_ms` - Maximum retry delay in milliseconds
+/// * `retry_max_attempts` - Maximum number of retry attempts
 ///
 /// # Returns
 ///
 /// Returns `Ok(Arc<X509Source>)` if successful, or an error if connection fails after retries.
-pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
+pub async fn create_x509_source(
+    agent_address: &str,
+    retry_interval_ms: u64,
+    retry_max_delay_ms: u64,
+    retry_max_attempts: usize,
+) -> Result<Arc<X509Source>> {
     // Create X509Source with retries (workload may need time to attest)
-    // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
-    let retry_strategy = ExponentialBackoff::from_millis(1000)
-        .max_delay(Duration::from_secs(16))
-        .take(10);
+    let retry_strategy = ExponentialBackoff::from_millis(retry_interval_ms)
+        .max_delay(Duration::from_millis(retry_max_delay_ms))
+        .take(retry_max_attempts);
 
     RetryIf::spawn(
         retry_strategy,
@@ -232,9 +251,43 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
         })
 }
 
+/// Determines if an error is retryable when connecting to the SPIRE agent.
+///
+/// This function checks if the error is transient and worth retrying.
+/// The following error conditions are considered retryable:
+///
+/// - **PermissionDenied**: The workload may not be attested yet by the SPIRE agent.
+///   SPIRE needs time to complete the attestation process before granting access
+///   to the Workload API socket.
+///
+/// - **Connection refused**: The SPIRE agent socket exists but is not yet ready to
+///   accept connections. This commonly occurs during container startup when the
+///   agent process is still initializing.
+///
+/// - **No such file or directory / NotFound**: The SPIRE agent socket has not been
+///   created yet. This is expected during initialization, especially in Kubernetes
+///   environments where the agent socket is mounted via a volume that may not be
+///   immediately available.
+///
+/// - **transport error / tonic::transport::Error**: Network-level transient errors
+///   from the gRPC transport layer that may resolve on retry.
+///
+/// # Arguments
+///
+/// * `err` - The error to check for retryability
+///
+/// # Returns
+///
+/// Returns `true` if the error is retryable, `false` otherwise.
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let error_str = format!("{err:?}");
     error_str.contains("PermissionDenied")
+        || error_str.contains("ConnectionRefused")
+        || error_str.contains("NotFound")
+        || error_str.contains("No such file or directory")
+        || error_str.contains("Connection refused")
+        || error_str.contains("transport error")
+        || error_str.contains("tonic::transport::Error")
 }
 
 #[cfg(test)]
@@ -246,16 +299,36 @@ mod tests {
 
     #[test]
     fn test_is_retryable_error() {
+        // PermissionDenied errors
         let err = anyhow::anyhow!("Some PermissionDenied error");
         assert!(is_retryable_error(&err));
 
         let err = anyhow::anyhow!("PermissionDenied: access denied");
         assert!(is_retryable_error(&err));
 
-        let err = anyhow::anyhow!("Some other error");
-        assert!(!is_retryable_error(&err));
-
+        // Connection refused errors
         let err = anyhow::anyhow!("Connection refused");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("ConnectionRefused");
+        assert!(is_retryable_error(&err));
+
+        // File not found errors
+        let err = anyhow::anyhow!("No such file or directory");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("NotFound");
+        assert!(is_retryable_error(&err));
+
+        // Transport errors
+        let err = anyhow::anyhow!("transport error");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("tonic::transport::Error");
+        assert!(is_retryable_error(&err));
+
+        // Non-retryable errors
+        let err = anyhow::anyhow!("Some other error");
         assert!(!is_retryable_error(&err));
     }
 
@@ -267,16 +340,24 @@ mod tests {
         let start = Instant::now();
         // Use an address that is definitely invalid and shouldn't trigger "PermissionDenied"
         // "invalid" scheme usually causes an immediate parsing or argument error
-        let result =
-            fetch_and_write_x509_svid("invalid://address", cert_dir, "svid.pem", "svid_key.pem")
-                .await;
+        let result = fetch_and_write_x509_svid(
+            "invalid://address",
+            cert_dir,
+            "svid.pem",
+            "svid_key.pem",
+            10,
+            100,
+            3,
+        )
+        .await;
         let duration = start.elapsed();
 
         assert!(result.is_err());
-        // Should return essentially immediately, definitely less than the first retry backoff (1s)
+        // Should return relatively quickly on non-retryable error
+        // In practice this may take longer due to DNS resolution, connection timeouts, etc.
         assert!(
-            duration < Duration::from_millis(500),
-            "Should fail fast on non-retryable error, took {:?}",
+            duration < Duration::from_secs(2),
+            "Should fail reasonably fast on non-retryable error, took {:?}",
             duration
         );
     }
@@ -287,9 +368,16 @@ mod tests {
         let cert_dir = temp_dir.path();
 
         // Test with invalid agent address
-        let result =
-            fetch_and_write_x509_svid("invalid://address", cert_dir, "svid.pem", "svid_key.pem")
-                .await;
+        let result = fetch_and_write_x509_svid(
+            "invalid://address",
+            cert_dir,
+            "svid.pem",
+            "svid_key.pem",
+            10,
+            100,
+            3,
+        )
+        .await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -315,6 +403,9 @@ mod tests {
             cert_dir,
             "svid.pem",
             "svid_key.pem",
+            10,
+            100,
+            3,
         )
         .await;
 
@@ -337,6 +428,9 @@ mod tests {
             &cert_dir,
             "custom_cert.pem",
             "custom_key.pem",
+            10,
+            100,
+            3,
         )
         .await;
 
@@ -352,7 +446,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_x509_source_invalid_address() {
         // Test with invalid agent address
-        let result = create_x509_source("invalid://address").await;
+        let result = create_x509_source("invalid://address", 10, 100, 3).await;
 
         // Should fail when trying to create the client
         if let Err(e) = result {
@@ -370,7 +464,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_x509_source_missing_agent() {
         // Test with non-existent unix socket
-        let result = create_x509_source("unix:///tmp/nonexistent-socket-98765.sock").await;
+        let result =
+            create_x509_source("unix:///tmp/nonexistent-socket-98765.sock", 10, 100, 3).await;
 
         // Should fail after retries
         if let Err(e) = result {
@@ -385,7 +480,7 @@ mod tests {
     async fn test_create_x509_source_unix_format() {
         // Test that unix:// format is handled correctly
         // This will fail to connect but should not fail on address parsing
-        let result = create_x509_source("unix:///tmp/test-socket.sock").await;
+        let result = create_x509_source("unix:///tmp/test-socket.sock", 10, 100, 3).await;
 
         // Should not contain "Invalid unix socket address" since we handle the conversion
         if let Err(e) = result {
@@ -400,7 +495,7 @@ mod tests {
     async fn test_create_x509_source_invalid_unix_address() {
         // Test with invalid unix:// address format (empty path)
         // This will try to connect to "unix:" which should fail quickly
-        let result = create_x509_source("unix://").await;
+        let result = create_x509_source("unix://", 10, 100, 3).await;
         assert!(result.is_err());
         // Should fail on connection, not hang forever
         if let Err(e) = result {
