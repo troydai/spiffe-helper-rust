@@ -8,21 +8,18 @@ set -e
 # 2. Main container starts alongside the sidecar
 # 3. Pod lifecycle (delete/recreate) works correctly
 
+# Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../utility/colors.sh"
+
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KUBECONFIG_PATH="${KUBECONFIG:-$ROOT_DIR/artifacts/kubeconfig}"
 NAMESPACE="httpbin"
 APP_LABEL="app=httpbin"
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
 # Check if kubectl is available
 if ! command -v kubectl &> /dev/null; then
-    echo -e "${RED}Error: kubectl not found${NC}"
+    echo -e "${COLOR_RED}Error: kubectl not found${COLOR_RESET}"
     exit 1
 fi
 
