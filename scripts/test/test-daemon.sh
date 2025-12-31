@@ -1,4 +1,5 @@
 #!/bin/bash
+# Tests the spiffe-helper sidecar behavior using httpbin pods.
 set -e
 
 # Test script for spiffe-helper functionality
@@ -8,7 +9,7 @@ set -e
 # 3. Pod lifecycle (delete/recreate) works correctly
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KUBECONFIG_PATH="${KUBECONFIG:-$ROOT_DIR/artifacts/kubeconfig}"
 NAMESPACE="httpbin"
 APP_LABEL="app=httpbin"

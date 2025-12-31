@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Checks for and provides installation instructions for required development tools like kind, kubectl, and openssl.
 set -euo pipefail
 
 # Source color support

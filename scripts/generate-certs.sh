@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Generates CA and SPIRE server certificates for the local development environment.
 set -euo pipefail
 
 # Source color support

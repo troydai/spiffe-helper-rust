@@ -1,9 +1,10 @@
 #!/bin/bash
+# Removes the SPIRE CSI driver from the cluster.
 
 set -e
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-ROOT_DIR="${ROOT_DIR:-$(cd "${DIR}/.." && pwd)}"
+ROOT_DIR="${ROOT_DIR:-$(cd "${DIR}/../.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"

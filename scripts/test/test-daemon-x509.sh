@@ -1,4 +1,5 @@
 #!/bin/bash
+# Integration test for X.509 certificate fetching in daemon mode.
 set -e
 
 # Integration test for X.509 certificate fetching in daemon mode
@@ -9,7 +10,7 @@ set -e
 # 4. Daemon exits with code 1 if certificate fetching fails
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KUBECONFIG_PATH="${KUBECONFIG:-$ROOT_DIR/artifacts/kubeconfig}"
 NAMESPACE="spiffe-helper-test"
 TEST_POD="spiffe-helper-daemon-test"

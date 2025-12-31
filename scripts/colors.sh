@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Color support for scripts
+# Provides color support and utility functions for shell scripts.
 # Usage: source this file in your script
 
 # Check if output is a TTY (terminal)

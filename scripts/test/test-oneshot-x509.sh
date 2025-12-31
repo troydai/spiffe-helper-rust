@@ -1,4 +1,5 @@
 #!/bin/bash
+# Integration test for X.509 certificate fetching in one-shot mode.
 set -e
 
 # Integration test for X.509 certificate fetching in one-shot mode
@@ -9,7 +10,7 @@ set -e
 # 4. One-shot mode exits with code 1 if certificate fetching fails
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KUBECONFIG_PATH="${KUBECONFIG:-$ROOT_DIR/artifacts/kubeconfig}"
 NAMESPACE="spiffe-helper-smoke-test"
 TEST_POD="spiffe-helper-oneshot-test"
@@ -17,7 +18,7 @@ NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
 TEST_SPIFFE_ID="spiffe://spiffe-helper.local/ns/${NAMESPACE}/sa/test-sa"
 
 # Source color support
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/../colors.sh"
 
 # Check if kubectl is available
 if ! command -v kubectl &> /dev/null; then

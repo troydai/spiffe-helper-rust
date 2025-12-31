@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Sets up a local Kubernetes cluster using kind and configures the kubeconfig for the environment.
 set -euo pipefail
 
 # Source color support
