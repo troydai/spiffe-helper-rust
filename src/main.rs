@@ -26,16 +26,17 @@ async fn main() -> Result<()> {
 
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
+
     if daemon_mode {
-        daemon::run(config).await
-    } else {
-        run_once(config).await
+        return daemon::run(config).await;
     }
+
+    run_once(config).await
 }
 
 async fn run_once(config: config::Config) -> Result<()> {
     println!("Running spiffe-helper-rust in one-shot mode...");
-    svid::fetch_x509_certificate(&config).await?;
+    svid::fetch_x509_certificate(&config, config.agent_address()?).await?;
     println!("One-shot mode complete");
     Ok(())
 }

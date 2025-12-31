@@ -1,10 +1,14 @@
 use anyhow::{Context, Result};
+use spiffe::bundle::BundleSource;
+use spiffe::svid::SvidSource;
+use spiffe::workload_api::x509_source::X509Source;
+use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
 
 use crate::config::Config;
 use crate::health;
-use crate::svid;
+use crate::workload_api;
 
 const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 
@@ -13,8 +17,12 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 pub async fn run(config: Config) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
 
-    // Fetch initial X.509 SVID at startup
-    svid::fetch_x509_certificate(&config).await?;
+    // Create X509Source (this waits for the first update)
+    let source = workload_api::create_x509_source(config.agent_address()?).await?;
+    println!("Connected to SPIRE agent");
+
+    // Initial fetch and write
+    fetch_and_process_update(&source, &config).await?;
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
@@ -33,6 +41,9 @@ pub async fn run(config: Config) -> Result<()> {
 
     println!("Daemon running. Waiting for SIGTERM to shutdown...");
 
+    // Watch for updates
+    let mut update_channel = source.updated();
+
     // Main daemon loop
     let result = loop {
         tokio::select! {
@@ -42,6 +53,18 @@ pub async fn run(config: Config) -> Result<()> {
             }
             _ = liveness_interval.tick() => {
                 println!("spiffe-helper-rust daemon is alive");
+            }
+            // Watch for updates from X509Source
+            res = update_channel.changed() => {
+                 if let Err(e) = res {
+                     eprintln!("Update channel closed: {}", e);
+                     break Err(anyhow::anyhow!("X509Source update channel closed"));
+                 }
+
+                 println!("Received X.509 update notification");
+                 if let Err(e) = fetch_and_process_update(&source, &config).await {
+                     eprintln!("Failed to handle X.509 update: {}", e);
+                 }
             }
             // If health server is running, watch for its completion (which indicates failure)
             Some(res) = async {
@@ -79,4 +102,18 @@ pub async fn run(config: Config) -> Result<()> {
 
     println!("Daemon shutdown complete");
     result
+}
+
+async fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+    let svid = source
+        .get_svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
+
+    let bundle = source
+        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
+        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
+
+    workload_api::write_x509_svid_on_update(&svid, &bundle, config).await
 }

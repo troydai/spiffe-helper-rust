@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use spiffe::bundle::x509::X509Bundle;
 use spiffe::svid::x509::X509Svid;
 use spiffe::svid::SvidSource;
 use spiffe::workload_api::client::WorkloadApiClient;
@@ -9,6 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::RetryIf;
+
+use crate::config::Config;
 
 const UDS_PREFIX: &str = "unix://";
 
@@ -31,10 +34,6 @@ pub async fn fetch_and_write_x509_svid(
     svid_file_name: &str,
     svid_key_file_name: &str,
 ) -> Result<()> {
-    // Create cert directory if it doesn't exist
-    fs::create_dir_all(cert_dir)
-        .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
-
     // Use create_x509_source to handle retry logic and connection
     let source = create_x509_source(agent_address).await?;
 
@@ -43,6 +42,37 @@ pub async fn fetch_and_write_x509_svid(
         .get_svid()
         .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
+
+    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name).await?;
+
+    // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
+    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    };
+    println!(
+        "Fetched certificate: spiffe_id={}, expires={}",
+        svid.spiffe_id(),
+        expiry
+    );
+
+    Ok(())
+}
+
+/// Writes the X.509 SVID to the specified directory.
+async fn write_svid_to_files(
+    svid: &X509Svid,
+    cert_dir: &Path,
+    svid_file_name: &str,
+    svid_key_file_name: &str,
+) -> Result<()> {
+    // Create cert directory if it doesn't exist
+    fs::create_dir_all(cert_dir)
+        .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
 
     // Determine file paths
     let cert_path = cert_dir.join(svid_file_name);
@@ -72,6 +102,82 @@ pub async fn fetch_and_write_x509_svid(
 
     fs::write(&key_path, key_pem)
         .with_context(|| format!("Failed to write private key to {}", key_path.display()))?;
+
+    Ok(())
+}
+
+/// Writes the X.509 trust bundle to the specified directory.
+async fn write_bundle_to_file(
+    bundle: &X509Bundle,
+    cert_dir: &Path,
+    bundle_file_name: &str,
+) -> Result<()> {
+    let bundle_path = cert_dir.join(bundle_file_name);
+
+    // Write bundle certificates (PEM format)
+    let bundle_pem = bundle
+        .authorities()
+        .iter()
+        .map(|cert: &spiffe::cert::Certificate| {
+            pem::encode(&pem::Pem {
+                tag: "CERTIFICATE".to_string(),
+                contents: cert.as_ref().to_vec(),
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fs::write(&bundle_path, bundle_pem)
+        .with_context(|| format!("Failed to write bundle to {}", bundle_path.display()))?;
+
+    Ok(())
+}
+
+/// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.
+///
+/// This function is called when the X509Source receives an update notification.
+/// It writes the updated SVID (certificate and private key) and trust bundle to the configured directory.
+///
+/// # Arguments
+///
+/// * `svid` - The updated X509 SVID containing the certificate chain and private key
+/// * `bundle` - The trust bundle containing CA certificates
+/// * `config` - Configuration containing output paths
+pub async fn write_x509_svid_on_update(
+    svid: &X509Svid,
+    bundle: &X509Bundle,
+    config: &Config,
+) -> Result<()> {
+    let cert_dir = config
+        .cert_dir
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
+    let cert_dir_path = Path::new(cert_dir);
+
+    write_svid_to_files(
+        svid,
+        cert_dir_path,
+        config.svid_file_name(),
+        config.svid_key_file_name(),
+    )
+    .await?;
+
+    write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name()).await?;
+
+    // Log update with SPIFFE ID and certificate expiry
+    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    };
+    println!(
+        "Updated certificate: spiffe_id={}, expires={}",
+        svid.spiffe_id(),
+        expiry
+    );
 
     Ok(())
 }
@@ -223,22 +329,23 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_and_write_x509_svid_custom_file_names() {
         let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path();
+        let cert_dir = temp_dir.path().join("nested_certs");
 
-        // Test with custom file names
+        // Test with custom file names - should fail on connection
         let result = fetch_and_write_x509_svid(
             "unix:///tmp/nonexistent-socket.sock",
-            cert_dir,
+            &cert_dir,
             "custom_cert.pem",
             "custom_key.pem",
         )
         .await;
 
-        // Should fail on connection, but verify directory was created
+        // Should fail on connection before creating directory
+        // (directory is only created when we have an SVID to write)
         assert!(result.is_err());
         assert!(
-            cert_dir.exists(),
-            "Cert directory should be created even if connection fails"
+            !cert_dir.exists(),
+            "Cert directory should not be created if fetch fails"
         );
     }
 
@@ -377,5 +484,105 @@ mod tests {
         // but we can verify the directory creation logic would work
         fs::create_dir_all(&cert_dir).unwrap();
         assert!(cert_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_write_x509_svid_on_update_writes_files() {
+        use spiffe::bundle::x509::X509Bundle;
+        use spiffe::spiffe_id::TrustDomain;
+        use spiffe::svid::x509::X509Svid;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+
+        // Mock config
+        let config = Config {
+            cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+            svid_file_name: Some("test_svid.pem".to_string()),
+            svid_key_file_name: Some("test_key.pem".to_string()),
+            ..Default::default()
+        };
+
+        // Parse mock SVID
+        let cert_pem = r#"-----BEGIN CERTIFICATE-----
+MIIDNTCCAh2gAwIBAgIUGq/oNncXam0A9VgyVENC8GuQn/gwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI1MTIyOTAwNTYyOVoXDTI2MTIy
+OTAwNTYyOVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA1n0i1hMPSoH7J+XRuR1j6VS93fd4t+RNfVp/a7yvaZOR
+f0aSWYK4qZy7gzys1KH7akQON+LCpw6RTiIWimAzAZ2Yx8DMxbSzH4PYMQ7URI7/
+MRUPXz3qCwbubtkJwNNbFb+x8d87HR7GpLJMrt2MqboQBILTaaFYu3nvwi5RLVdZ
+h+wzEQbWDjR5RZo9SElhN9vJfKhSS2aYL8zpGhHb5e+IbYw5pzKgKLa6jnyLHqAz
+Jf5Dt4CqYJDzTpsBG5dH3d/f5isMBe2u+E5D901IG1v8eUKP1lEJrljqx9xpgYf0
+MtwwCn5dnom8WOpQvP9Im4Xdy7vZ7PIcsvuZeaJNsQIDAQABo38wfTAOBgNVHQ8B
+Af8EBAMCBaAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMAkGA1UdEwQC
+MAAwIgYDVR0RBBswGYYXc3BpZmZlOi8vbG9jYWxob3N0L3Rlc3QwHQYDVR0OBBYE
+FPWyhgkS+mDZTVK+kcRAHK1CSwyxMA0GCSqGSIb3DQEBCwUAA4IBAQDQwoTbmFB7
+xtfk2ieQAaul+AgCNopkr36xtE07vxEP307tC6hO2RMJUWYOFeioxPBbDpa5ff/3
+6n4QgHpnFAGDIvwvuUa1upIkvaHFYFlyPFvcyzBZqhob/wIn8WIITFfkzygbkxGi
+XzjpK0rIywC6cdaqYMDcIUyqNCO2l2FvccN7flo2pnppj6w55kv+FTX0C+AUv3qC
+p2OFoxDKsFWk52J0qXR/QefV5fFnrOLgqI2zCbyxSr7EZzGW9Fbr+YrpzXfI8Z0b
+8GGRaPE6WbPGjvc97Uwmp3T+4UkJatFnaAHnTsRikdbZ1F0xNcvE13pltbG3vFk0
+lQluKI5/n4db
+-----END CERTIFICATE-----"#;
+
+        let key_pem = r#"-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDWfSLWEw9Kgfsn
+5dG5HWPpVL3d93i35E19Wn9rvK9pk5F/RpJZgripnLuDPKzUoftqRA434sKnDpFO
+IhaKYDMBnZjHwMzFtLMfg9gxDtREjv8xFQ9fPeoLBu5u2QnA01sVv7Hx3zsdHsak
+skyu3YypuhAEgtNpoVi7ee/CLlEtV1mH7DMRBtYONHlFmj1ISWE328l8qFJLZpgv
+zOkaEdvl74htjDmnMqAotrqOfIseoDMl/kO3gKpgkPNOmwEbl0fd39/mKwwF7a74
+TkP3TUgbW/x5Qo/WUQmuWOrH3GmBh/Qy3DAKfl2eibxY6lC8/0ibhd3Lu9ns8hyy
++5l5ok2xAgMBAAECggEAAO0baGc+qqizB/ITHMSGuOw3waye5dRjjUYFxNZUv5T2
+jOEmIqLQ31Kg8KkjaeulJUlT8mPVSVljwT2ecUyHC9u9XCd1+uiT2W/9UADrY7xm
+V7TqkxO2XgPSpcHkK+P9wbNJNm0rWS3X18A5Wov0XotCJHLYLN2Yf37ATUtb6GE1
+J5wqaSaqVwLbhNk0rRojsWNO61LYYsEL3fA/Q2UA0lLfo5BkuHIHRJJvdtmpWX2L
+Rf6lV4nxdx+nxPIkqYo0wFLanuM+6+zO2ej094/Op3CWnxqXoUnCzyA8tut7+0zk
+o1LN5ygAdDFlJ0qvyPUTeDHLG+H0DfMKcI3jBRUmAQKBgQD56BH/+qH0A9oISwgM
+75C+mKt/88LFA5ztUOwz7k4opVOYtrUxDNKRqplI4bUedJMWUbm2kXFh00YIBt7u
+9PMgkQwq6j5IK4JzcPYto/Zl6bNuoiL7/WQU3lSTspu0xhEqAYC+KAxEI0WuuIVZ
+J9QSq1884dTBwHiXmnNmCX3BkQKBgQDbt/yOKjnsSJd5YtktWrJ9DnPamkwIqub1
+D59k/HwKs8StSHNFW0fkVpTRTa7R12CMgu1n5KvGOt2PX1VNPHh4O/8th1pkt2Jj
+lf29NMmSXcOi7KPjj0zBWmDAx0cgkt7ftQcc42+9CWxyUdbgYqMismaUit0zZkhR
+5nvsALm6IQKBgDoZHbYpCmW0T4gGCYUYXMoyrAw/G1S6Fk2FtqQMDtecN+cU8uLI
+XFvJEYHEF1tRNrDFpysufPGFMI7FKibbg3pavj1r37bfhqBX7qOFrs7amgBqaT+0
+FQRU+8yqhVBti6f8WXXb0Z41pQmNlFK506/Tb3yz88ZnfKGiIpniMv5BAoGAQn7K
+JlRNN184yHnL9FfwkLxg/5WW0UC3qQ7TVIK9H5gMO80jZagcd9RkMXvrHoKqK5ws
+MTcZbWK/TvaxIDDe3LR7o9HE35pIYo8wPaTOJEfQP2ySpPnnZtTtVyp4MjmAzf9B
+adLDLFi/w1FVUI9Jg+St+uKT00xvMqoocuI9U0ECgYEAzlapqhd+CXpy7KQKNtRt
+A/lJGE6bkB2JNXbr01DthVr5JSDPz39AxTRB9VeRUt5irB8f7OvmS7fy6+FY9Jxn
+QBAx6pG1tAXOEZt4R56+FIKBFcHJFB0ja/RQDRDLCZl+KFUDfgRNvomZx1lWBicI
+fPfrHw1nYcPliVB4Zbv8d1w=
+-----END PRIVATE KEY-----"#;
+
+        let cert_der = pem::parse(cert_pem).unwrap().contents;
+        let key_der = pem::parse(key_pem).unwrap().contents;
+
+        let svid = X509Svid::parse_from_der(&cert_der, &key_der).expect("Failed to parse SVID");
+        let td = TrustDomain::new("localhost").unwrap();
+        let bundle = X509Bundle::parse_from_der(td, &cert_der).expect("Failed to parse Bundle");
+
+        // Call handler
+        let result = write_x509_svid_on_update(&svid, &bundle, &config).await;
+
+        assert!(result.is_ok());
+
+        // Verify files
+        let cert_path = cert_dir.join("test_svid.pem");
+        let key_path = cert_dir.join("test_key.pem");
+        let bundle_path = cert_dir.join("svid_bundle.pem"); // default name
+
+        assert!(cert_path.exists());
+        assert!(key_path.exists());
+        assert!(bundle_path.exists());
+
+        // Verify content
+        let written_cert = fs::read_to_string(cert_path).unwrap();
+        assert!(written_cert.contains("BEGIN CERTIFICATE"));
+
+        let written_key = fs::read_to_string(key_path).unwrap();
+        assert!(written_key.contains("BEGIN PRIVATE KEY"));
+
+        let written_bundle = fs::read_to_string(bundle_path).unwrap();
+        assert!(written_bundle.contains("BEGIN CERTIFICATE"));
     }
 }

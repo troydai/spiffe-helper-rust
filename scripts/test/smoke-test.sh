@@ -173,6 +173,17 @@ else
 fi
 echo ""
 
+# Test 8: Verify daemon mode with certificate rotation
+echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 8: Daemon Mode Certificate Rotation${COLOR_RESET}"
+if "${SCRIPT_DIR}/test-daemon-x509.sh"; then
+	echo -e "${COLOR_GREEN}✓${COLOR_RESET} Daemon mode certificate rotation test passed"
+	TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+	echo -e "${COLOR_RED}✗${COLOR_RESET} Daemon mode certificate rotation test failed"
+	TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
 # Summary
 echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}=== Test Summary ===${COLOR_RESET}"
 echo -e "${COLOR_GREEN}Passed: ${TESTS_PASSED}${COLOR_RESET}"
