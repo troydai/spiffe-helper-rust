@@ -197,9 +197,14 @@ pub async fn write_x509_svid_on_update(
 pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
     // Create X509Source with retries (workload may need time to attest)
     // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
+    #[cfg(not(test))]
     let retry_strategy = ExponentialBackoff::from_millis(1000)
         .max_delay(Duration::from_secs(16))
         .take(10);
+
+    // Fail fast in tests to avoid long waits
+    #[cfg(test)]
+    let retry_strategy = ExponentialBackoff::from_millis(10).take(3);
 
     RetryIf::spawn(
         retry_strategy,
@@ -234,7 +239,15 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let error_str = format!("{err:?}");
+    // Retry when SPIRE agent is not yet ready to serve:
+    // - Socket file doesn't exist yet (NotFound, "No such file or directory")
+    // - Socket exists but not accepting connections (ConnectionRefused, "Connection refused")
+    // - Permission issues during workload attestation (PermissionDenied)
     error_str.contains("PermissionDenied")
+        || error_str.contains("ConnectionRefused")
+        || error_str.contains("Connection refused")
+        || error_str.contains("NotFound")
+        || error_str.contains("No such file or directory")
 }
 
 #[cfg(test)]
@@ -252,10 +265,13 @@ mod tests {
         let err = anyhow::anyhow!("PermissionDenied: access denied");
         assert!(is_retryable_error(&err));
 
-        let err = anyhow::anyhow!("Some other error");
-        assert!(!is_retryable_error(&err));
+        let err = anyhow::anyhow!("No such file or directory");
+        assert!(is_retryable_error(&err));
 
         let err = anyhow::anyhow!("Connection refused");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("Some other error");
         assert!(!is_retryable_error(&err));
     }
 
