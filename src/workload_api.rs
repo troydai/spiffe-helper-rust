@@ -239,13 +239,15 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let error_str = format!("{err:?}");
+    // Retry when SPIRE agent is not yet ready to serve:
+    // - Socket file doesn't exist yet (NotFound, "No such file or directory")
+    // - Socket exists but not accepting connections (ConnectionRefused, "Connection refused")
+    // - Permission issues during workload attestation (PermissionDenied)
     error_str.contains("PermissionDenied")
         || error_str.contains("ConnectionRefused")
+        || error_str.contains("Connection refused")
         || error_str.contains("NotFound")
         || error_str.contains("No such file or directory")
-        || error_str.contains("Connection refused")
-        || error_str.contains("transport error")
-        || error_str.contains("tonic::transport::Error")
 }
 
 #[cfg(test)]
