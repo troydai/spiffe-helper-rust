@@ -234,7 +234,15 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let error_str = format!("{err:?}");
+    // Retry when SPIRE agent is not yet ready to serve:
+    // - Socket file doesn't exist yet (NotFound, "No such file or directory")
+    // - Socket exists but not accepting connections (ConnectionRefused, "Connection refused")
+    // - Permission issues during workload attestation (PermissionDenied)
     error_str.contains("PermissionDenied")
+        || error_str.contains("ConnectionRefused")
+        || error_str.contains("Connection refused")
+        || error_str.contains("NotFound")
+        || error_str.contains("No such file or directory")
 }
 
 #[cfg(test)]
@@ -252,10 +260,13 @@ mod tests {
         let err = anyhow::anyhow!("PermissionDenied: access denied");
         assert!(is_retryable_error(&err));
 
-        let err = anyhow::anyhow!("Some other error");
-        assert!(!is_retryable_error(&err));
+        let err = anyhow::anyhow!("No such file or directory");
+        assert!(is_retryable_error(&err));
 
         let err = anyhow::anyhow!("Connection refused");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("Some other error");
         assert!(!is_retryable_error(&err));
     }
 
