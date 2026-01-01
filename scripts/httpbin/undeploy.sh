@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# Removes the httpbin service and its associated resources from the cluster.
 set -euo pipefail
 
 # Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/../utility/colors.sh"
 
-ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Checks for and provides installation instructions for required development tools like kind, kubectl, and openssl.
 set -euo pipefail
 
 # Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/utility/colors.sh"
 
 info() {
   echo -e "${COLOR_CYAN}[tools]${COLOR_RESET} $*"
