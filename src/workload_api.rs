@@ -5,6 +5,7 @@ use spiffe::svid::SvidSource;
 use spiffe::workload_api::client::WorkloadApiClient;
 use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
+use std::iter::Take;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,8 +35,13 @@ pub async fn fetch_and_write_x509_svid(
     svid_file_name: &str,
     svid_key_file_name: &str,
 ) -> Result<()> {
-    // Use create_x509_source to handle retry logic and connection
-    let source = create_x509_source(agent_address).await?;
+    let factory = X509SourceFactory::new().with_address(agent_address);
+
+    // Use fast-fail retry strategy in tests
+    #[cfg(test)]
+    let factory = factory.with_retry(ExponentialBackoff::from_millis(10).take(3));
+
+    let source = factory.create().await?;
 
     // Get the SVID from the source
     let svid: X509Svid = source
@@ -182,44 +188,55 @@ pub async fn write_x509_svid_on_update(
     Ok(())
 }
 
-/// Creates an X509Source for continuous X.509 certificate watching.
-///
-/// This function creates an X509Source that automatically watches for certificate updates
-/// from the SPIRE agent. It includes retry logic with exponential backoff for initial connection.
-///
-/// # Arguments
-///
-/// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
-///
-/// # Returns
-///
-/// Returns `Ok(Arc<X509Source>)` if successful, or an error if connection fails after retries.
-pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
-    // Create X509Source with retries (workload may need time to attest)
-    // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
-    #[cfg(not(test))]
-    let retry_strategy = ExponentialBackoff::from_millis(1000)
-        .max_delay(Duration::from_secs(16))
-        .take(10);
+pub struct X509SourceFactory {
+    retry_strategy: Take<ExponentialBackoff>,
+    address: String,
+}
 
-    // Fail fast in tests to avoid long waits
-    #[cfg(test)]
-    let retry_strategy = ExponentialBackoff::from_millis(10).take(3);
+impl Default for X509SourceFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-    RetryIf::spawn(
-        retry_strategy,
-        || async {
-            let client = create_workload_api_client(agent_address).await?;
-            X509SourceBuilder::new()
-                .with_client(client)
-                .build()
-                .await
-                .context("Failed to build X509Source")
-        },
-        is_retryable_error,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to create X509Source from SPIRE agent: {e}"))
+impl X509SourceFactory {
+    pub fn new() -> Self {
+        let retry_strategy = ExponentialBackoff::from_millis(1000)
+            .max_delay(Duration::from_secs(16))
+            .take(10);
+
+        Self {
+            retry_strategy,
+            address: String::new(),
+        }
+    }
+
+    pub async fn create(&self) -> Result<Arc<X509Source>> {
+        RetryIf::spawn(
+            self.retry_strategy.clone(),
+            || async {
+                let client = create_workload_api_client(self.address.as_str()).await?;
+                X509SourceBuilder::new()
+                    .with_client(client)
+                    .build()
+                    .await
+                    .context("Failed to build X509Source")
+            },
+            is_retryable_error,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create X509Source from SPIRE agent: {e}"))
+    }
+
+    pub fn with_retry(mut self, strategy: Take<ExponentialBackoff>) -> Self {
+        self.retry_strategy = strategy;
+        self
+    }
+
+    pub fn with_address(mut self, address: &str) -> Self {
+        self.address = address.to_string();
+        self
+    }
 }
 
 async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> {
@@ -365,10 +382,17 @@ mod tests {
         );
     }
 
+    /// Helper function to create an X509SourceFactory with fast-fail retry strategy for tests
+    fn test_x509_source_factory(address: &str) -> X509SourceFactory {
+        X509SourceFactory::new()
+            .with_address(address)
+            .with_retry(ExponentialBackoff::from_millis(10).take(3))
+    }
+
     #[tokio::test]
-    async fn test_create_x509_source_invalid_address() {
+    async fn test_x509_source_factory_invalid_address() {
         // Test with invalid agent address
-        let result = create_x509_source("invalid://address").await;
+        let result = test_x509_source_factory("invalid://address").create().await;
 
         // Should fail when trying to create the client
         if let Err(e) = result {
@@ -384,9 +408,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_x509_source_missing_agent() {
+    async fn test_x509_source_factory_missing_agent() {
         // Test with non-existent unix socket
-        let result = create_x509_source("unix:///tmp/nonexistent-socket-98765.sock").await;
+        let result = test_x509_source_factory("unix:///tmp/nonexistent-socket-98765.sock")
+            .create()
+            .await;
 
         // Should fail after retries
         if let Err(e) = result {
@@ -398,10 +424,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_x509_source_unix_format() {
+    async fn test_x509_source_factory_unix_format() {
         // Test that unix:// format is handled correctly
         // This will fail to connect but should not fail on address parsing
-        let result = create_x509_source("unix:///tmp/test-socket.sock").await;
+        let result = test_x509_source_factory("unix:///tmp/test-socket.sock")
+            .create()
+            .await;
 
         // Should not contain "Invalid unix socket address" since we handle the conversion
         if let Err(e) = result {
@@ -413,10 +441,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_x509_source_invalid_unix_address() {
+    async fn test_x509_source_factory_invalid_unix_address() {
         // Test with invalid unix:// address format (empty path)
         // This will try to connect to "unix:" which should fail quickly
-        let result = create_x509_source("unix://").await;
+        let result = test_x509_source_factory("unix://").create().await;
         assert!(result.is_err());
         // Should fail on connection, not hang forever
         if let Err(e) = result {
