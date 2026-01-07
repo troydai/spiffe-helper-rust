@@ -217,6 +217,10 @@ impl X509SourceFactory {
     }
 
     pub async fn create(&self) -> Result<Arc<X509Source>> {
+        if self.address.is_empty() {
+            return Err(anyhow::anyhow!("address must be configured"));
+        }
+
         RetryIf::spawn(
             self.retry_strategy.clone(),
             || async {
@@ -349,6 +353,43 @@ mod tests {
         X509SourceFactory::new()
             .with_address(address)
             .with_retry(ExponentialBackoff::from_millis(10).take(3))
+    }
+
+    #[tokio::test]
+    async fn test_x509_source_factory_empty_address() {
+        let factory = X509SourceFactory::new();
+        let result = factory.create().await;
+
+        match result {
+            Ok(_) => panic!("Expected error for empty address"),
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("address must be configured"),
+                    "Expected 'address must be configured' error, got: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_x509_source_factory_whitespace_address() {
+        let factory = X509SourceFactory::new().with_address("   ");
+        let result = factory.create().await;
+
+        // Whitespace-only address should fail on connection, not validation
+        // This tests that we only check for truly empty strings
+        match result {
+            Ok(_) => panic!("Expected error for whitespace address"),
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    !error_msg.contains("address must be configured"),
+                    "Whitespace address should attempt connection, not fail validation"
+                );
+            }
+        }
     }
 
     #[tokio::test]
