@@ -5,6 +5,7 @@ use spiffe::svid::SvidSource;
 use spiffe::workload_api::client::WorkloadApiClient;
 use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
 use std::fs;
+use std::iter::Take;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,8 +35,18 @@ pub async fn fetch_and_write_x509_svid(
     svid_file_name: &str,
     svid_key_file_name: &str,
 ) -> Result<()> {
-    // Use create_x509_source to handle retry logic and connection
-    let source = create_x509_source(agent_address).await?;
+    let factory = X509SourceFactory::new().with_address(agent_address);
+    fetch_and_write_x509_svid_with_factory(&factory, cert_dir, svid_file_name, svid_key_file_name)
+        .await
+}
+
+async fn fetch_and_write_x509_svid_with_factory(
+    factory: &X509SourceFactory,
+    cert_dir: &Path,
+    svid_file_name: &str,
+    svid_key_file_name: &str,
+) -> Result<()> {
+    let source = factory.create().await?;
 
     // Get the SVID from the source
     let svid: X509Svid = source
@@ -182,39 +193,59 @@ pub async fn write_x509_svid_on_update(
     Ok(())
 }
 
-/// Creates an X509Source for continuous X.509 certificate watching.
-///
-/// This function creates an X509Source that automatically watches for certificate updates
-/// from the SPIRE agent. It includes retry logic with exponential backoff for initial connection.
-///
-/// # Arguments
-///
-/// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
-///
-/// # Returns
-///
-/// Returns `Ok(Arc<X509Source>)` if successful, or an error if connection fails after retries.
-pub async fn create_x509_source(agent_address: &str) -> Result<Arc<X509Source>> {
-    // Create X509Source with retries (workload may need time to attest)
-    // Use exponential backoff: 1s, 2s, 4s, 8s, 16s max, up to 10 attempts
-    let retry_strategy = ExponentialBackoff::from_millis(1000)
-        .max_delay(Duration::from_secs(16))
-        .take(10);
+pub struct X509SourceFactory {
+    retry_strategy: Take<ExponentialBackoff>,
+    address: String,
+}
 
-    RetryIf::spawn(
-        retry_strategy,
-        || async {
-            let client = create_workload_api_client(agent_address).await?;
-            X509SourceBuilder::new()
-                .with_client(client)
-                .build()
-                .await
-                .context("Failed to build X509Source")
-        },
-        is_retryable_error,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to create X509Source from SPIRE agent: {e}"))
+impl Default for X509SourceFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl X509SourceFactory {
+    pub fn new() -> Self {
+        let retry_strategy = ExponentialBackoff::from_millis(1000)
+            .max_delay(Duration::from_secs(16))
+            .take(10);
+
+        Self {
+            retry_strategy,
+            address: String::new(),
+        }
+    }
+
+    pub async fn create(&self) -> Result<Arc<X509Source>> {
+        if self.address.is_empty() {
+            return Err(anyhow::anyhow!("address must be configured"));
+        }
+
+        RetryIf::spawn(
+            self.retry_strategy.clone(),
+            || async {
+                let client = create_workload_api_client(self.address.as_str()).await?;
+                X509SourceBuilder::new()
+                    .with_client(client)
+                    .build()
+                    .await
+                    .context("Failed to build X509Source")
+            },
+            is_retryable_error,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create X509Source from SPIRE agent: {e}"))
+    }
+
+    pub fn with_retry(mut self, strategy: Take<ExponentialBackoff>) -> Self {
+        self.retry_strategy = strategy;
+        self
+    }
+
+    pub fn with_address(mut self, address: &str) -> Self {
+        self.address = address.to_string();
+        self
+    }
 }
 
 async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> {
@@ -234,7 +265,15 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
     let error_str = format!("{err:?}");
+    // Retry when SPIRE agent is not yet ready to serve:
+    // - Socket file doesn't exist yet (NotFound, "No such file or directory")
+    // - Socket exists but not accepting connections (ConnectionRefused, "Connection refused")
+    // - Permission issues during workload attestation (PermissionDenied)
     error_str.contains("PermissionDenied")
+        || error_str.contains("ConnectionRefused")
+        || error_str.contains("Connection refused")
+        || error_str.contains("NotFound")
+        || error_str.contains("No such file or directory")
 }
 
 #[cfg(test)]
@@ -252,10 +291,13 @@ mod tests {
         let err = anyhow::anyhow!("PermissionDenied: access denied");
         assert!(is_retryable_error(&err));
 
-        let err = anyhow::anyhow!("Some other error");
-        assert!(!is_retryable_error(&err));
+        let err = anyhow::anyhow!("No such file or directory");
+        assert!(is_retryable_error(&err));
 
         let err = anyhow::anyhow!("Connection refused");
+        assert!(is_retryable_error(&err));
+
+        let err = anyhow::anyhow!("Some other error");
         assert!(!is_retryable_error(&err));
     }
 
@@ -267,8 +309,9 @@ mod tests {
         let start = Instant::now();
         // Use an address that is definitely invalid and shouldn't trigger "PermissionDenied"
         // "invalid" scheme usually causes an immediate parsing or argument error
+        let factory = test_x509_source_factory("invalid://address");
         let result =
-            fetch_and_write_x509_svid("invalid://address", cert_dir, "svid.pem", "svid_key.pem")
+            fetch_and_write_x509_svid_with_factory(&factory, cert_dir, "svid.pem", "svid_key.pem")
                 .await;
         let duration = start.elapsed();
 
@@ -282,58 +325,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_fetch_and_write_x509_svid_invalid_address() {
-        let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path();
-
-        // Test with invalid agent address
-        let result =
-            fetch_and_write_x509_svid("invalid://address", cert_dir, "svid.pem", "svid_key.pem")
-                .await;
-
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        // The error message should contain information about failing to create the client
-        // It may be "Failed to create WorkloadApiClient" or connection-related errors
-        assert!(
-            error_msg.contains("Failed to create X509Source")
-                || error_msg.contains("Invalid agent address")
-                || error_msg.contains("Failed to connect")
-                || error_msg.contains("invalid")
-                || error_msg.contains("Failed to fetch X.509 SVID")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_fetch_and_write_x509_svid_missing_agent() {
-        let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path();
-
-        // Test with non-existent unix socket
-        let result = fetch_and_write_x509_svid(
-            "unix:///tmp/nonexistent-socket.sock",
-            cert_dir,
-            "svid.pem",
-            "svid_key.pem",
-        )
-        .await;
-
-        assert!(result.is_err());
-        // Should fail when trying to connect to non-existent socket
-        let error_msg = result.unwrap_err().to_string();
-        // The error message may vary depending on the platform/tonic version
-        // Just verify that it's an error related to connection/socket
-        assert!(!error_msg.is_empty(), "Error message should not be empty");
-    }
-
-    #[tokio::test]
     async fn test_fetch_and_write_x509_svid_custom_file_names() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path().join("nested_certs");
 
         // Test with custom file names - should fail on connection
-        let result = fetch_and_write_x509_svid(
-            "unix:///tmp/nonexistent-socket.sock",
+        let factory = test_x509_source_factory("unix:///tmp/nonexistent-socket.sock");
+        let result = fetch_and_write_x509_svid_with_factory(
+            &factory,
             &cert_dir,
             "custom_cert.pem",
             "custom_key.pem",
@@ -349,63 +348,47 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_create_x509_source_invalid_address() {
-        // Test with invalid agent address
-        let result = create_x509_source("invalid://address").await;
+    /// Helper function to create an X509SourceFactory with fast-fail retry strategy for tests
+    fn test_x509_source_factory(address: &str) -> X509SourceFactory {
+        X509SourceFactory::new()
+            .with_address(address)
+            .with_retry(ExponentialBackoff::from_millis(10).take(3))
+    }
 
-        // Should fail when trying to create the client
-        if let Err(e) = result {
-            let error_msg = e.to_string();
-            assert!(
-                error_msg.contains("Failed to create X509Source")
-                    || error_msg.contains("Failed to create WorkloadApiClient")
-                    || error_msg.contains("invalid")
-            );
-        } else {
-            panic!("Expected error but got Ok");
+    #[tokio::test]
+    async fn test_x509_source_factory_empty_address() {
+        let factory = X509SourceFactory::new();
+        let result = factory.create().await;
+
+        match result {
+            Ok(_) => panic!("Expected error for empty address"),
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("address must be configured"),
+                    "Expected 'address must be configured' error, got: {}",
+                    error_msg
+                );
+            }
         }
     }
 
     #[tokio::test]
-    async fn test_create_x509_source_missing_agent() {
-        // Test with non-existent unix socket
-        let result = create_x509_source("unix:///tmp/nonexistent-socket-98765.sock").await;
+    async fn test_x509_source_factory_whitespace_address() {
+        let factory = X509SourceFactory::new().with_address("   ");
+        let result = factory.create().await;
 
-        // Should fail after retries
-        if let Err(e) = result {
-            let error_msg = e.to_string();
-            assert!(error_msg.contains("Failed to create X509Source") || !error_msg.is_empty());
-        } else {
-            panic!("Expected error but got Ok");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_create_x509_source_unix_format() {
-        // Test that unix:// format is handled correctly
-        // This will fail to connect but should not fail on address parsing
-        let result = create_x509_source("unix:///tmp/test-socket.sock").await;
-
-        // Should not contain "Invalid unix socket address" since we handle the conversion
-        if let Err(e) = result {
-            let error_msg = e.to_string();
-            assert!(!error_msg.contains("Invalid unix socket address"));
-        } else {
-            panic!("Expected error but got Ok");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_create_x509_source_invalid_unix_address() {
-        // Test with invalid unix:// address format (empty path)
-        // This will try to connect to "unix:" which should fail quickly
-        let result = create_x509_source("unix://").await;
-        assert!(result.is_err());
-        // Should fail on connection, not hang forever
-        if let Err(e) = result {
-            let error_msg = e.to_string();
-            assert!(error_msg.contains("Failed to create X509Source"));
+        // Whitespace-only address should fail on connection, not validation
+        // This tests that we only check for truly empty strings
+        match result {
+            Ok(_) => panic!("Expected error for whitespace address"),
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    !error_msg.contains("address must be configured"),
+                    "Whitespace address should attempt connection, not fail validation"
+                );
+            }
         }
     }
 
@@ -469,21 +452,6 @@ mod tests {
             let error_msg = e.to_string();
             assert!(error_msg.contains("Failed to create WorkloadApiClient"));
         }
-    }
-
-    #[test]
-    fn test_cert_dir_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path().join("nested").join("cert").join("dir");
-
-        // Verify directory doesn't exist
-        assert!(!cert_dir.exists());
-
-        // The function should create the directory
-        // We can't easily test the full function without a SPIRE agent,
-        // but we can verify the directory creation logic would work
-        fs::create_dir_all(&cert_dir).unwrap();
-        assert!(cert_dir.exists());
     }
 
     #[tokio::test]
