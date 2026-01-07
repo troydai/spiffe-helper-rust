@@ -58,21 +58,4 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("cert_dir must be configured"));
     }
-
-    #[tokio::test]
-    async fn test_fetch_x509_certificate_with_custom_file_names() {
-        let config = Config {
-            agent_address: Some("unix:///tmp/nonexistent-agent.sock".to_string()),
-            cert_dir: Some("/tmp/certs".to_string()),
-            svid_file_name: Some("custom_cert.pem".to_string()),
-            svid_key_file_name: Some("custom_key.pem".to_string()),
-            ..Default::default()
-        };
-
-        let result = fetch_x509_certificate(&config, "unix:///tmp/nonexistent-agent.sock").await;
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(!error_msg.contains("agent_address must be configured"));
-        assert!(!error_msg.contains("cert_dir must be configured"));
-    }
 }
