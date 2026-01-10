@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
-use std::path::PathBuf;
 
-use spiffe_helper_rust::{cli, config, daemon, oneshot};
+use spiffe_helper_rust::{cli, daemon, oneshot};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -10,31 +9,12 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 async fn main() -> Result<()> {
     let args = cli::Args::parse();
 
-    // Handle version flag
-    if args.version {
-        println!("{VERSION}");
-        return Ok(());
+    match args.get_operation()? {
+        cli::Operation::Version => {
+            println!("{VERSION}");
+            Ok(())
+        }
+        cli::Operation::RunDaemon(config) => daemon::run(config).await,
+        cli::Operation::RunOnce(config) => oneshot::run(config).await,
     }
-
-    // Parse config file
-    let config_path = PathBuf::from(&args.config);
-    let mut config = config::parse_hcl_config(config_path.as_path())
-        .with_context(|| format!("Failed to parse config file: {}", args.config))?;
-
-    // CLI flag overrides config value (if provided)
-    if let Some(daemon_mode) = args.daemon_mode {
-        config.daemon_mode = Some(daemon_mode);
-    }
-
-    // Check if daemon mode is enabled (defaults to true)
-    let daemon_mode = config.daemon_mode.unwrap_or(true);
-
-    // Validate required configuration fields early
-    config.validate(daemon_mode)?;
-
-    if daemon_mode {
-        return daemon::run(config).await;
-    }
-
-    oneshot::run(config).await
 }
