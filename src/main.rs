@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use spiffe_helper_rust::{cli, config, daemon, svid};
+use spiffe_helper_rust::{cli, config, daemon, oneshot};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -36,12 +36,5 @@ async fn main() -> Result<()> {
         return daemon::run(config).await;
     }
 
-    run_once(config).await
-}
-
-async fn run_once(config: config::Config) -> Result<()> {
-    println!("Running spiffe-helper-rust in one-shot mode...");
-    svid::fetch_x509_certificate(&config, config.agent_address()?).await?;
-    println!("One-shot mode complete");
-    Ok(())
+    oneshot::run(config).await
 }
