@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::RetryIf;
 
-use crate::config::Config;
+use crate::cli::Config;
 
 const UDS_PREFIX: &str = "unix://";
 

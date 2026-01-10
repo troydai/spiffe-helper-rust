@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-use crate::config::Config;
+use crate::cli::Config;
 use crate::workload_api;
 
 /// Fetches the initial X.509 SVID from the SPIRE agent and writes them to the specified directory.

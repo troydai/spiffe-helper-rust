@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
 
-use crate::config::Config;
+use crate::cli::Config;
 use crate::health;
 use crate::workload_api;
 
