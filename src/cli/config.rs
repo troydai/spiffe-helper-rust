@@ -63,20 +63,30 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))
     }
 
+    pub fn reconcile_daemon_mode(&mut self, cli_daemon_mode: Option<bool>) {
+        if let Some(v) = cli_daemon_mode {
+            self.daemon_mode = Some(v);
+        }
+    }
+
+    pub fn is_daemon_mode(&self) -> bool {
+        self.daemon_mode.unwrap_or(true)
+    }
+
     /// Validates required configuration fields based on the operation mode.
     ///
     /// Both daemon and one-shot modes require `agent_address` and `cert_dir` to be configured
     /// for X.509 certificate fetching.
     ///
-    /// # Arguments
-    ///
-    /// * `daemon_mode` - Whether running in daemon mode (true) or one-shot mode (false)
-    ///
     /// # Returns
     ///
     /// Returns `Ok(())` if validation passes, or an error with a descriptive message.
-    pub fn validate(&self, daemon_mode: bool) -> Result<()> {
-        let mode_name = if daemon_mode { "daemon" } else { "one-shot" };
+    pub fn validate(&self) -> Result<()> {
+        let mode_name = if self.is_daemon_mode() {
+            "daemon"
+        } else {
+            "one-shot"
+        };
 
         if self.agent_address.is_none() {
             anyhow::bail!(
@@ -1196,14 +1206,56 @@ mod tests {
     }
 
     #[test]
+    fn test_is_daemon_mode_defaults_to_true() {
+        let config = Config::default();
+        assert!(config.is_daemon_mode());
+    }
+
+    #[test]
+    fn test_is_daemon_mode_respects_setting() {
+        let config_false = Config {
+            daemon_mode: Some(false),
+            ..Default::default()
+        };
+        assert!(!config_false.is_daemon_mode());
+
+        let config_true = Config {
+            daemon_mode: Some(true),
+            ..Default::default()
+        };
+        assert!(config_true.is_daemon_mode());
+    }
+
+    #[test]
+    fn test_reconcile_daemon_mode() {
+        let mut config = Config::default();
+
+        // Initially None, defaults to true
+        assert!(config.is_daemon_mode());
+
+        // Override with false
+        config.reconcile_daemon_mode(Some(false));
+        assert!(!config.is_daemon_mode());
+
+        // No override, keep current value
+        config.reconcile_daemon_mode(None);
+        assert!(!config.is_daemon_mode());
+
+        // Override with true
+        config.reconcile_daemon_mode(Some(true));
+        assert!(config.is_daemon_mode());
+    }
+
+    #[test]
     fn test_validate_config_missing_agent_address_daemon_mode() {
         let config = Config {
             agent_address: None,
             cert_dir: Some("/tmp/certs".to_string()),
+            daemon_mode: Some(true),
             ..Default::default()
         };
 
-        let result = config.validate(true);
+        let result = config.validate();
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("agent_address must be configured"));
@@ -1215,10 +1267,11 @@ mod tests {
         let config = Config {
             agent_address: None,
             cert_dir: Some("/tmp/certs".to_string()),
+            daemon_mode: Some(false),
             ..Default::default()
         };
 
-        let result = config.validate(false);
+        let result = config.validate();
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("agent_address must be configured"));
@@ -1230,10 +1283,11 @@ mod tests {
         let config = Config {
             agent_address: Some("unix:///tmp/agent.sock".to_string()),
             cert_dir: None,
+            daemon_mode: Some(true),
             ..Default::default()
         };
 
-        let result = config.validate(true);
+        let result = config.validate();
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("cert_dir must be configured"));
@@ -1245,10 +1299,11 @@ mod tests {
         let config = Config {
             agent_address: Some("unix:///tmp/agent.sock".to_string()),
             cert_dir: None,
+            daemon_mode: Some(false),
             ..Default::default()
         };
 
-        let result = config.validate(false);
+        let result = config.validate();
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("cert_dir must be configured"));
@@ -1257,14 +1312,17 @@ mod tests {
 
     #[test]
     fn test_validate_config_valid_config() {
-        let config = Config {
+        let mut config = Config {
             agent_address: Some("unix:///tmp/agent.sock".to_string()),
             cert_dir: Some("/tmp/certs".to_string()),
             ..Default::default()
         };
 
         // Should pass for both modes
-        assert!(config.validate(true).is_ok());
-        assert!(config.validate(false).is_ok());
+        config.daemon_mode = Some(true);
+        assert!(config.validate().is_ok());
+
+        config.daemon_mode = Some(false);
+        assert!(config.validate().is_ok());
     }
 }

@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-use crate::config::HealthChecks;
+use crate::cli::HealthChecks;
 
 const DEFAULT_LIVENESS_PATH: &str = "/health/live";
 const DEFAULT_READINESS_PATH: &str = "/health/ready";
