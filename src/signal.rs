@@ -1,5 +1,8 @@
-use anyhow::{anyhow, Result};
-use nix::sys::signal::Signal;
+use anyhow::{anyhow, Context, Result};
+pub use nix::sys::signal::Signal;
+use nix::unistd::Pid;
+use std::fs;
+use std::path::Path;
 
 /// Parse a signal name string to a Signal enum
 /// Accepts both "SIGHUP" and "HUP" formats (case-insensitive)
@@ -19,9 +22,28 @@ pub fn parse_signal_name(name: &str) -> Result<Signal> {
     }
 }
 
+/// Send a signal to a process identified by PID
+pub fn send_signal(pid: i32, signal: Signal) -> Result<()> {
+    nix::sys::signal::kill(Pid::from_raw(pid), signal)
+        .with_context(|| format!("Failed to send signal {:?} to process {}", signal, pid))
+}
+
+/// Read a PID from a file
+pub fn read_pid_from_file(path: &Path) -> Result<i32> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read PID file: {}", path.display()))?;
+
+    content
+        .trim()
+        .parse::<i32>()
+        .with_context(|| format!("Failed to parse PID from file: {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_parse_signal_name_sighup() {
@@ -103,5 +125,41 @@ mod tests {
     fn test_parse_signal_name_empty() {
         let result = parse_signal_name("");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_pid_from_file() {
+        let mut tmp_file = NamedTempFile::new().unwrap();
+        writeln!(tmp_file, "12345").unwrap();
+
+        let pid = read_pid_from_file(tmp_file.path()).unwrap();
+        assert_eq!(pid, 12345);
+    }
+
+    #[test]
+    fn test_read_pid_from_file_with_whitespace() {
+        let mut tmp_file = NamedTempFile::new().unwrap();
+        writeln!(tmp_file, "  67890  ").unwrap();
+
+        let pid = read_pid_from_file(tmp_file.path()).unwrap();
+        assert_eq!(pid, 67890);
+    }
+
+    #[test]
+    fn test_read_pid_from_file_invalid() {
+        let mut tmp_file = NamedTempFile::new().unwrap();
+        writeln!(tmp_file, "not-a-pid").unwrap();
+
+        let result = read_pid_from_file(tmp_file.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_send_signal_to_self() {
+        // We can't easily test if signal was received without complex setup,
+        // but we can test that the call succeeds for SIGWINCH (which is harmless)
+        let pid = nix::unistd::getpid();
+        let result = send_signal(pid.as_raw(), Signal::SIGWINCH);
+        assert!(result.is_ok());
     }
 }

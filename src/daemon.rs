@@ -2,12 +2,15 @@ use anyhow::{Context, Result};
 use spiffe::bundle::BundleSource;
 use spiffe::svid::SvidSource;
 use spiffe::workload_api::x509_source::X509Source;
+use std::path::Path;
 use std::sync::Arc;
+use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
 
 use crate::cli::Config;
 use crate::health;
+use crate::signal;
 use crate::workload_api;
 
 const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
@@ -16,6 +19,14 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 /// and waits for SIGTERM.
 pub async fn run(config: Config) -> Result<()> {
     println!("Starting spiffe-helper-rust daemon...");
+
+    // Parse renew signal if configured
+    let renew_signal = config
+        .renew_signal
+        .as_ref()
+        .map(|s| signal::parse_signal_name(s))
+        .transpose()
+        .context("Failed to parse renew_signal")?;
 
     // Create X509Source (this waits for the first update)
     let source = workload_api::X509SourceFactory::new()
@@ -26,6 +37,24 @@ pub async fn run(config: Config) -> Result<()> {
 
     // Initial fetch and write
     fetch_and_process_update(&source, &config).await?;
+
+    // Spawn managed child process if configured
+    let mut child = if let Some(cmd) = &config.cmd {
+        let mut command = Command::new(cmd);
+        if let Some(args_str) = &config.cmd_args {
+            // Simple split by whitespace for args.
+            // TODO: More sophisticated parsing if needed (e.g. handling quotes)
+            command.args(args_str.split_whitespace());
+        }
+        println!(
+            "Spawning managed process: {} {:?}",
+            cmd,
+            config.cmd_args.as_deref().unwrap_or("")
+        );
+        Some(command.spawn().context("Failed to spawn managed process")?)
+    } else {
+        None
+    };
 
     // Start health check server if enabled
     let health_checks = config.health_checks.clone();
@@ -67,7 +96,51 @@ pub async fn run(config: Config) -> Result<()> {
                  println!("Received X.509 update notification");
                  if let Err(e) = fetch_and_process_update(&source, &config).await {
                      eprintln!("Failed to handle X.509 update: {}", e);
+                 } else {
+                     // Successfully updated certificates, now send signal if configured
+                     if let Some(sig) = renew_signal {
+                         // Signal managed child process
+                         if let Some(ref c) = child {
+                             if let Some(pid) = c.id() {
+                                 println!("Sending signal {:?} to managed process (PID: {})", sig, pid);
+                                 if let Err(e) = signal::send_signal(pid as i32, sig) {
+                                     eprintln!("Failed to signal managed process: {}", e);
+                                 }
+                             }
+                         }
+
+                         // Signal process via PID file
+                         if let Some(pid_file) = &config.pid_file_name {
+                             match signal::read_pid_from_file(Path::new(pid_file)) {
+                                 Ok(pid) => {
+                                     println!("Sending signal {:?} to process from PID file {} (PID: {})", sig, pid_file, pid);
+                                     if let Err(e) = signal::send_signal(pid, sig) {
+                                         eprintln!("Failed to signal process from PID file: {}", e);
+                                     }
+                                 }
+                                 Err(e) => {
+                                     eprintln!("Failed to read PID from file {}: {}", pid_file, e);
+                                 }
+                             }
+                         }
+                     }
                  }
+            }
+            // Watch for child process exit if it's being managed
+            Some(status) = async {
+                match child.as_mut() {
+                    Some(c) => Some(c.wait().await),
+                    None => None,
+                }
+            }, if child.is_some() => {
+                let status_str = match status {
+                    Ok(s) => s.to_string(),
+                    Err(e) => format!("error: {}", e),
+                };
+                println!("Managed process exited: {}", status_str);
+                // Depending on requirements, we might want to restart it or exit.
+                // For now, we'll just stop managing it and continue running the daemon.
+                child = None;
             }
             // If health server is running, watch for its completion (which indicates failure)
             Some(res) = async {
@@ -94,6 +167,12 @@ pub async fn run(config: Config) -> Result<()> {
             }
         }
     };
+
+    // Shutdown child process if it was started and still running
+    if let Some(mut c) = child {
+        println!("Stopping managed process...");
+        let _ = c.kill().await;
+    }
 
     // Shutdown health check server if it was started and still running
     if let Some(ref handle) = health_server_handle {
