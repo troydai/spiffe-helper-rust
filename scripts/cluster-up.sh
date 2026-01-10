@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Sets up a local Kubernetes cluster using kind and configures the kubeconfig for the environment.
 set -euo pipefail
 
 # Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/utility/colors.sh"
 
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 KIND="${KIND:-kind}"
