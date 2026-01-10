@@ -41,9 +41,7 @@ impl Args {
             .with_context(|| format!("Failed to parse config file: {}", self.config))?;
 
         // CLI flag overrides config value (if provided)
-        if let Some(daemon_mode) = self.daemon_mode {
-            config.daemon_mode = Some(daemon_mode);
-        }
+        config.daemon_mode = self.daemon_mode.or(config.daemon_mode);
 
         // Check if daemon mode is enabled (defaults to true)
         let daemon_mode = config.daemon_mode.unwrap_or(true);
