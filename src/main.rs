@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use spiffe_helper_rust::{cli, daemon, svid};
+use spiffe_helper_rust::{cli, daemon, oneshot};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -15,13 +15,6 @@ async fn main() -> Result<()> {
             Ok(())
         }
         cli::Operation::RunDaemon(config) => daemon::run(config).await,
-        cli::Operation::RunOnce(config) => run_once(config).await,
+        cli::Operation::RunOnce(config) => oneshot::run(config).await,
     }
-}
-
-async fn run_once(config: cli::Config) -> Result<()> {
-    println!("Running spiffe-helper-rust in one-shot mode...");
-    svid::fetch_x509_certificate(&config, config.agent_address()?).await?;
-    println!("One-shot mode complete");
-    Ok(())
 }
