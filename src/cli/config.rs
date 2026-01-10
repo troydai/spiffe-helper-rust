@@ -63,20 +63,14 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))
     }
 
-    /// Reconciles the daemon mode by merging CLI input with the configuration setting.
-    /// The CLI input takes priority if provided. If neither is provided, it defaults to true.
-    ///
-    /// # Arguments
-    ///
-    /// * `cli_daemon_mode` - The daemon mode flag from the command line
-    ///
-    /// # Returns
-    ///
-    /// The final reconciled daemon mode value.
-    pub fn reconcile_daemon_mode(&mut self, cli_daemon_mode: Option<bool>) -> bool {
-        let mode = cli_daemon_mode.or(self.daemon_mode).unwrap_or(true);
-        self.daemon_mode = Some(mode);
-        mode
+    pub fn reconcile_daemon_mode(&mut self, cli_daemon_mode: Option<bool>) {
+        if let Some(v) = cli_daemon_mode {
+            self.daemon_mode = Some(v);
+        }
+    }
+
+    pub fn is_daemon_mode(&self) -> bool {
+        self.daemon_mode.unwrap_or(true)
     }
 
     /// Validates required configuration fields based on the operation mode.
@@ -88,8 +82,11 @@ impl Config {
     ///
     /// Returns `Ok(())` if validation passes, or an error with a descriptive message.
     pub fn validate(&self) -> Result<()> {
-        let daemon_mode = self.daemon_mode.unwrap_or(true);
-        let mode_name = if daemon_mode { "daemon" } else { "one-shot" };
+        let mode_name = if self.is_daemon_mode() {
+            "daemon"
+        } else {
+            "one-shot"
+        };
 
         if self.agent_address.is_none() {
             anyhow::bail!(
@@ -1206,6 +1203,47 @@ mod tests {
 
         assert_eq!(config.svid_file_name(), "custom.pem");
         assert_eq!(config.svid_key_file_name(), "custom_key.pem");
+    }
+
+    #[test]
+    fn test_is_daemon_mode_defaults_to_true() {
+        let config = Config::default();
+        assert!(config.is_daemon_mode());
+    }
+
+    #[test]
+    fn test_is_daemon_mode_respects_setting() {
+        let config_false = Config {
+            daemon_mode: Some(false),
+            ..Default::default()
+        };
+        assert!(!config_false.is_daemon_mode());
+
+        let config_true = Config {
+            daemon_mode: Some(true),
+            ..Default::default()
+        };
+        assert!(config_true.is_daemon_mode());
+    }
+
+    #[test]
+    fn test_reconcile_daemon_mode() {
+        let mut config = Config::default();
+
+        // Initially None, defaults to true
+        assert!(config.is_daemon_mode());
+
+        // Override with false
+        config.reconcile_daemon_mode(Some(false));
+        assert!(!config.is_daemon_mode());
+
+        // No override, keep current value
+        config.reconcile_daemon_mode(None);
+        assert!(!config.is_daemon_mode());
+
+        // Override with true
+        config.reconcile_daemon_mode(Some(true));
+        assert!(config.is_daemon_mode());
     }
 
     #[test]

@@ -46,10 +46,10 @@ impl Args {
         // Validate required configuration fields early
         config.validate()?;
 
-        if config.daemon_mode.unwrap_or(true) {
-            Ok(Operation::RunDaemon(config))
-        } else {
-            Ok(Operation::RunOnce(config))
+        if config.is_daemon_mode() {
+            return Ok(Operation::RunDaemon(config));
         }
+
+        Ok(Operation::RunOnce(config))
     }
 }
