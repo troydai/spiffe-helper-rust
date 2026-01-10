@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# Deploys the SPIRE agent DaemonSet to the Kubernetes cluster.
 set -euo pipefail
 
 # Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/../utility/colors.sh"
 
-ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 DEPLOY_DIR="${DEPLOY_DIR:-${ROOT_DIR}/deploy/spire/agent}"
 CERT_DIR="${CERT_DIR:-${ROOT_DIR}/artifacts/certs}"

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# Runs a suite of smoke tests to validate the SPIRE environment and basic functionality.
 set -euo pipefail
 
 # Source color support
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/colors.sh"
+source "${SCRIPT_DIR}/../utility/colors.sh"
 
-ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/artifacts/kubeconfig}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
@@ -168,6 +169,17 @@ if "${SCRIPT_DIR}/test-oneshot-x509.sh"; then
 	TESTS_PASSED=$((TESTS_PASSED + 1))
 else
 	echo -e "${COLOR_RED}✗${COLOR_RESET} One-shot mode certificate creation test failed"
+	TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+# Test 8: Verify daemon mode with certificate rotation
+echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 8: Daemon Mode Certificate Rotation${COLOR_RESET}"
+if "${SCRIPT_DIR}/test-daemon-x509.sh"; then
+	echo -e "${COLOR_GREEN}✓${COLOR_RESET} Daemon mode certificate rotation test passed"
+	TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+	echo -e "${COLOR_RED}✗${COLOR_RESET} Daemon mode certificate rotation test failed"
 	TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 echo ""
