@@ -7,11 +7,11 @@ use crate::cli::HealthChecks;
 const DEFAULT_LIVENESS_PATH: &str = "/health/live";
 const DEFAULT_READINESS_PATH: &str = "/health/ready";
 
-pub async fn liveness_handler() -> impl IntoResponse {
+async fn liveness_handler() -> impl IntoResponse {
     StatusCode::OK
 }
 
-pub async fn readiness_handler() -> impl IntoResponse {
+async fn readiness_handler() -> impl IntoResponse {
     StatusCode::OK
 }
 
