@@ -62,6 +62,40 @@ impl Config {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))
     }
+
+    /// Validates required configuration fields based on the operation mode.
+    ///
+    /// Both daemon and one-shot modes require `agent_address` and `cert_dir` to be configured
+    /// for X.509 certificate fetching.
+    ///
+    /// # Arguments
+    ///
+    /// * `daemon_mode` - Whether running in daemon mode (true) or one-shot mode (false)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if validation passes, or an error with a descriptive message.
+    pub fn validate(&self, daemon_mode: bool) -> Result<()> {
+        let mode_name = if daemon_mode { "daemon" } else { "one-shot" };
+
+        if self.agent_address.is_none() {
+            anyhow::bail!(
+                "agent_address must be configured for {} mode.\n\
+                 Set it in your config file: agent_address = \"unix:///run/spire/sockets/agent.sock\"",
+                mode_name
+            );
+        }
+
+        if self.cert_dir.is_none() {
+            anyhow::bail!(
+                "cert_dir must be configured for {} mode.\n\
+                 Set it in your config file: cert_dir = \"/path/to/certs\"",
+                mode_name
+            );
+        }
+
+        Ok(())
+    }
 }
 
 pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {
@@ -1159,5 +1193,78 @@ mod tests {
 
         assert_eq!(config.svid_file_name(), "custom.pem");
         assert_eq!(config.svid_key_file_name(), "custom_key.pem");
+    }
+
+    #[test]
+    fn test_validate_config_missing_agent_address_daemon_mode() {
+        let config = Config {
+            agent_address: None,
+            cert_dir: Some("/tmp/certs".to_string()),
+            ..Default::default()
+        };
+
+        let result = config.validate(true);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("agent_address must be configured"));
+        assert!(error_msg.contains("daemon mode"));
+    }
+
+    #[test]
+    fn test_validate_config_missing_agent_address_oneshot_mode() {
+        let config = Config {
+            agent_address: None,
+            cert_dir: Some("/tmp/certs".to_string()),
+            ..Default::default()
+        };
+
+        let result = config.validate(false);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("agent_address must be configured"));
+        assert!(error_msg.contains("one-shot mode"));
+    }
+
+    #[test]
+    fn test_validate_config_missing_cert_dir_daemon_mode() {
+        let config = Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: None,
+            ..Default::default()
+        };
+
+        let result = config.validate(true);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("cert_dir must be configured"));
+        assert!(error_msg.contains("daemon mode"));
+    }
+
+    #[test]
+    fn test_validate_config_missing_cert_dir_oneshot_mode() {
+        let config = Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: None,
+            ..Default::default()
+        };
+
+        let result = config.validate(false);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("cert_dir must be configured"));
+        assert!(error_msg.contains("one-shot mode"));
+    }
+
+    #[test]
+    fn test_validate_config_valid_config() {
+        let config = Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: Some("/tmp/certs".to_string()),
+            ..Default::default()
+        };
+
+        // Should pass for both modes
+        assert!(config.validate(true).is_ok());
+        assert!(config.validate(false).is_ok());
     }
 }
