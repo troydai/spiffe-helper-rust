@@ -41,15 +41,15 @@ impl Args {
             .with_context(|| format!("Failed to parse config file: {}", self.config))?;
 
         // Merge CLI flag with config value and default to true
-        let daemon_mode = config.reconcile_daemon_mode(self.daemon_mode);
+        config.reconcile_daemon_mode(self.daemon_mode);
 
-        // Validate required configuration fields early and return operation
-        config.validate().map(|_| {
-            if daemon_mode {
-                Operation::RunDaemon(config)
-            } else {
-                Operation::RunOnce(config)
-            }
-        })
+        // Validate required configuration fields early
+        config.validate()?;
+
+        if config.daemon_mode.unwrap_or(true) {
+            Ok(Operation::RunDaemon(config))
+        } else {
+            Ok(Operation::RunOnce(config))
+        }
     }
 }
