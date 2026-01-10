@@ -22,10 +22,15 @@ async fn main() -> Result<()> {
         .with_context(|| format!("Failed to parse config file: {}", args.config))?;
 
     // CLI flag overrides config value (if provided)
-    config.daemon_mode = args.daemon_mode.or(config.daemon_mode);
+    if let Some(daemon_mode) = args.daemon_mode {
+        config.daemon_mode = Some(daemon_mode);
+    }
 
     // Check if daemon mode is enabled (defaults to true)
     let daemon_mode = config.daemon_mode.unwrap_or(true);
+
+    // Validate required configuration fields early
+    config.validate(daemon_mode)?;
 
     if daemon_mode {
         return daemon::run(config).await;
