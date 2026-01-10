@@ -41,12 +41,11 @@ impl Args {
             .with_context(|| format!("Failed to parse config file: {}", self.config))?;
 
         // CLI flag overrides config value (if provided), defaults to true
-        let daemon_mode = self.daemon_mode.or(config.daemon_mode).unwrap_or(true);
-        config.daemon_mode = Some(daemon_mode);
+        config.daemon_mode = Some(self.daemon_mode.or(config.daemon_mode).unwrap_or(true));
 
         // Validate required configuration fields early and return operation
-        config.validate(daemon_mode).map(|_| {
-            if daemon_mode {
+        config.validate().map(|_| {
+            if config.daemon_mode.unwrap() {
                 Operation::RunDaemon(config)
             } else {
                 Operation::RunOnce(config)
