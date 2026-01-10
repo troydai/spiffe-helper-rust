@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::RetryIf;
 
-use crate::config::Config;
+use crate::cli::Config;
 
 const UDS_PREFIX: &str = "unix://";
 
@@ -221,20 +221,51 @@ impl X509SourceFactory {
             return Err(anyhow::anyhow!("address must be configured"));
         }
 
+        let address = self.address.clone();
+        let mut attempt = 0u32;
+
         RetryIf::spawn(
             self.retry_strategy.clone(),
-            || async {
-                let client = create_workload_api_client(self.address.as_str()).await?;
-                X509SourceBuilder::new()
-                    .with_client(client)
-                    .build()
-                    .await
-                    .context("Failed to build X509Source")
+            || {
+                let addr = address.clone();
+                attempt += 1;
+                async move {
+                    if attempt > 1 {
+                        eprintln!(
+                            "Retry attempt {} to create X509Source (address={})",
+                            attempt, addr
+                        );
+                    }
+                    let client = create_workload_api_client(&addr).await?;
+                    X509SourceBuilder::new()
+                        .with_client(client)
+                        .build()
+                        .await
+                        .context("Failed to build X509Source")
+                }
             },
-            is_retryable_error,
+            |err: &anyhow::Error| {
+                let retryable = is_retryable_error(err);
+                if !retryable {
+                    let error_category = categorize_error(err);
+                    eprintln!(
+                        "Non-retryable error during X509Source creation: category={}, error={:?}",
+                        error_category, err
+                    );
+                }
+                retryable
+            },
         )
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create X509Source from SPIRE agent: {e}"))
+        .map_err(|e| {
+            let error_category = categorize_error(&e);
+            anyhow::anyhow!(
+                "Failed to create X509Source from SPIRE agent after {} attempts: category={}, error={}",
+                attempt,
+                error_category,
+                e
+            )
+        })
     }
 
     pub fn with_retry(mut self, strategy: Take<ExponentialBackoff>) -> Self {
@@ -274,6 +305,44 @@ fn is_retryable_error(err: &anyhow::Error) -> bool {
         || error_str.contains("Connection refused")
         || error_str.contains("NotFound")
         || error_str.contains("No such file or directory")
+}
+
+/// Categorizes an error into a human-readable category for diagnostic purposes.
+/// This helps operators quickly identify whether an error is related to configuration,
+/// network connectivity, or other issues.
+fn categorize_error(err: &anyhow::Error) -> &'static str {
+    let error_str = format!("{err:?}");
+
+    // Network/connectivity errors (retryable)
+    if error_str.contains("ConnectionRefused") || error_str.contains("Connection refused") {
+        return "network/connection_refused";
+    }
+    if error_str.contains("NotFound") || error_str.contains("No such file or directory") {
+        return "network/socket_not_found";
+    }
+    if error_str.contains("PermissionDenied") {
+        return "network/permission_denied";
+    }
+
+    // gRPC/protocol errors
+    if error_str.contains("tonic") || error_str.contains("grpc") || error_str.contains("h2") {
+        return "grpc/protocol_error";
+    }
+
+    // Configuration errors
+    if error_str.contains("InvalidUri")
+        || error_str.contains("invalid")
+        || error_str.contains("Invalid")
+    {
+        return "config/invalid_address";
+    }
+
+    // SPIFFE-specific errors
+    if error_str.contains("SVID") || error_str.contains("spiffe") {
+        return "spiffe/svid_error";
+    }
+
+    "unknown"
 }
 
 #[cfg(test)]
@@ -367,6 +436,63 @@ fPfrHw1nYcPliVB4Zbv8d1w=
 
         let err = anyhow::anyhow!("Some other error");
         assert!(!is_retryable_error(&err));
+    }
+
+    #[test]
+    fn test_categorize_error_network_errors() {
+        let err = anyhow::anyhow!("ConnectionRefused: refused");
+        assert_eq!(categorize_error(&err), "network/connection_refused");
+
+        let err = anyhow::anyhow!("Connection refused by server");
+        assert_eq!(categorize_error(&err), "network/connection_refused");
+
+        let err = anyhow::anyhow!("NotFound: socket not found");
+        assert_eq!(categorize_error(&err), "network/socket_not_found");
+
+        let err = anyhow::anyhow!("No such file or directory");
+        assert_eq!(categorize_error(&err), "network/socket_not_found");
+
+        let err = anyhow::anyhow!("PermissionDenied: access denied");
+        assert_eq!(categorize_error(&err), "network/permission_denied");
+    }
+
+    #[test]
+    fn test_categorize_error_grpc_errors() {
+        let err = anyhow::anyhow!("tonic error: transport error");
+        assert_eq!(categorize_error(&err), "grpc/protocol_error");
+
+        let err = anyhow::anyhow!("grpc status code: unavailable");
+        assert_eq!(categorize_error(&err), "grpc/protocol_error");
+
+        let err = anyhow::anyhow!("h2 protocol error");
+        assert_eq!(categorize_error(&err), "grpc/protocol_error");
+    }
+
+    #[test]
+    fn test_categorize_error_config_errors() {
+        let err = anyhow::anyhow!("InvalidUri: bad uri format");
+        assert_eq!(categorize_error(&err), "config/invalid_address");
+
+        let err = anyhow::anyhow!("invalid address format");
+        assert_eq!(categorize_error(&err), "config/invalid_address");
+
+        let err = anyhow::anyhow!("Invalid socket path");
+        assert_eq!(categorize_error(&err), "config/invalid_address");
+    }
+
+    #[test]
+    fn test_categorize_error_spiffe_errors() {
+        let err = anyhow::anyhow!("SVID parsing failed");
+        assert_eq!(categorize_error(&err), "spiffe/svid_error");
+
+        let err = anyhow::anyhow!("spiffe error occurred");
+        assert_eq!(categorize_error(&err), "spiffe/svid_error");
+    }
+
+    #[test]
+    fn test_categorize_error_unknown() {
+        let err = anyhow::anyhow!("Some completely unexpected error");
+        assert_eq!(categorize_error(&err), "unknown");
     }
 
     #[tokio::test]

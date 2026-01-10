@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::cli::Config;
 use crate::svid;
 use anyhow::Result;
 

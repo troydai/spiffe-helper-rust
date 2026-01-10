@@ -12,6 +12,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      product: ${{ steps.filter.outputs.product }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            product:
+              - 'src/**'
+              - 'deploy/**'
+              - 'scripts/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'Dockerfile*'
+              - 'Makefile'
+              - 'kind-config.yaml'
+              - '.github/workflows/ci.yml'
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -57,6 +78,8 @@ jobs:
           platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
 
   smoke-test:
+    needs: changes
+    if: needs.changes.outputs.product == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
