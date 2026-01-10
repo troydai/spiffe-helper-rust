@@ -40,12 +40,12 @@ impl Args {
         let mut config = config::parse_hcl_config(config_path.as_path())
             .with_context(|| format!("Failed to parse config file: {}", self.config))?;
 
-        // CLI flag overrides config value (if provided), defaults to true
-        config.daemon_mode = Some(self.daemon_mode.or(config.daemon_mode).unwrap_or(true));
+        // Merge CLI flag with config value and default to true
+        let daemon_mode = config.reconcile_daemon_mode(self.daemon_mode);
 
         // Validate required configuration fields early and return operation
         config.validate().map(|_| {
-            if config.daemon_mode.unwrap() {
+            if daemon_mode {
                 Operation::RunDaemon(config)
             } else {
                 Operation::RunOnce(config)

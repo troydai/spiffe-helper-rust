@@ -63,6 +63,22 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("agent_address must be configured"))
     }
 
+    /// Reconciles the daemon mode by merging CLI input with the configuration setting.
+    /// The CLI input takes priority if provided. If neither is provided, it defaults to true.
+    ///
+    /// # Arguments
+    ///
+    /// * `cli_daemon_mode` - The daemon mode flag from the command line
+    ///
+    /// # Returns
+    ///
+    /// The final reconciled daemon mode value.
+    pub fn reconcile_daemon_mode(&mut self, cli_daemon_mode: Option<bool>) -> bool {
+        let mode = cli_daemon_mode.or(self.daemon_mode).unwrap_or(true);
+        self.daemon_mode = Some(mode);
+        mode
+    }
+
     /// Validates required configuration fields based on the operation mode.
     ///
     /// Both daemon and one-shot modes require `agent_address` and `cert_dir` to be configured
