@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
 
     // Handle version flag
     if args.version {
-        println!("{}", VERSION);
+        println!("{VERSION}");
         return Ok(());
     }
 
@@ -77,12 +77,12 @@ async fn main() -> Result<()> {
     // Validate required configuration fields early
     validate_config(&config, daemon_mode)?;
 
-    if !daemon_mode {
-        // Non-daemon mode - fetch certificates once and exit
-        run_once(config).await
-    } else {
+    if daemon_mode {
         // Run daemon mode
         run_daemon(config).await
+    } else {
+        // Non-daemon mode - fetch certificates once and exit
+        run_once(config).await
     }
 }
 
@@ -131,7 +131,7 @@ async fn run_once(config: config::Config) -> Result<()> {
 
 /// Fetches the initial X.509 SVID from the SPIRE agent and writes it to the configured directory.
 ///
-/// This function validates the configuration (agent_address and cert_dir) and calls
+/// This function validates the configuration (`agent_address` and `cert_dir`) and calls
 /// `workload_api::fetch_and_write_x509_svid` to perform the actual fetch and write operation.
 /// It implements the shared initial SVID fetch policy used by both daemon and one-shot modes,
 /// including retry logic and backoff handling.
@@ -153,10 +153,7 @@ async fn fetch_x509_certificate(config: &config::Config) -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
-    println!(
-        "Fetching X.509 certificate from SPIRE agent at {}...",
-        agent_address
-    );
+    println!("Fetching X.509 certificate from SPIRE agent at {agent_address}...");
     let cert_dir_path = std::path::PathBuf::from(cert_dir);
     workload_api::fetch_and_write_x509_svid(
         agent_address,
@@ -166,10 +163,7 @@ async fn fetch_x509_certificate(config: &config::Config) -> Result<()> {
     )
     .await
     .with_context(|| "Failed to fetch X.509 certificate")?;
-    println!(
-        "Successfully fetched and wrote X.509 certificate to {}",
-        cert_dir
-    );
+    println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
     Ok(())
 }
 
@@ -194,9 +188,9 @@ async fn run_daemon(config: config::Config) -> Result<()> {
                 .clone()
                 .unwrap_or_else(|| "/health/ready".to_string());
 
-            println!("Starting health check server on {}", bind_addr);
-            println!("  Liveness path: {}", liveness_path);
-            println!("  Readiness path: {}", readiness_path);
+            println!("Starting health check server on {bind_addr}");
+            println!("  Liveness path: {liveness_path}");
+            println!("  Readiness path: {readiness_path}");
 
             let app = Router::new()
                 .route(&liveness_path, get(liveness_handler))
@@ -204,7 +198,7 @@ async fn run_daemon(config: config::Config) -> Result<()> {
 
             let listener = tokio::net::TcpListener::bind(&bind_addr)
                 .await
-                .with_context(|| format!("Failed to bind to {}", bind_addr))?;
+                .with_context(|| format!("Failed to bind to {bind_addr}"))?;
 
             Some(tokio::spawn(async move {
                 axum::serve(listener, app)
@@ -257,7 +251,7 @@ async fn run_daemon(config: config::Config) -> Result<()> {
                     }
                     Err(e) => {
                         // Task panicked or was cancelled
-                        break Err(anyhow::anyhow!("Health check server task failed: {}", e));
+                        break Err(anyhow::anyhow!("Health check server task failed: {e}"));
                     }
                 }
             }

@@ -8,10 +8,10 @@ use std::path::Path;
 ///
 /// # Arguments
 ///
-/// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
+/// * `agent_address` - The address of the SPIRE agent (e.g., "<unix:///tmp/agent.sock>")
 /// * `cert_dir` - Directory where certificates should be written
 /// * `svid_file_name` - Optional filename for the certificate (default: "svid.pem")
-/// * `svid_key_file_name` - Optional filename for the private key (default: "svid_key.pem")
+/// * `svid_key_file_name` - Optional filename for the private key (default: "`svid_key.pem`")
 ///
 /// # Returns
 ///
@@ -31,18 +31,18 @@ pub async fn fetch_and_write_x509_svid(
     let mut client = if agent_address.starts_with("unix://") {
         let socket_path = agent_address
             .strip_prefix("unix://")
-            .ok_or_else(|| anyhow::anyhow!("Invalid unix socket address: {}", agent_address))?;
+            .ok_or_else(|| anyhow::anyhow!("Invalid unix socket address: {agent_address}"))?;
         // Use unix: prefix (not unix://) for spiffe crate
-        let spiffe_path = format!("unix:{}", socket_path);
+        let spiffe_path = format!("unix:{socket_path}");
         WorkloadApiClient::new_from_path(&spiffe_path)
             .await
-            .with_context(|| format!("Failed to connect to SPIRE agent at {}", agent_address))?
+            .with_context(|| format!("Failed to connect to SPIRE agent at {agent_address}"))?
     } else {
         // For non-unix addresses, try new_from_path with the address as-is
         // If it's already a valid address format, new_from_path should handle it
         WorkloadApiClient::new_from_path(agent_address)
             .await
-            .with_context(|| format!("Failed to connect to SPIRE agent at {}", agent_address))?
+            .with_context(|| format!("Failed to connect to SPIRE agent at {agent_address}"))?
     };
 
     // Fetch X.509 SVID with retries (workload may need time to attest)
@@ -53,20 +53,19 @@ pub async fn fetch_and_write_x509_svid(
             Ok(s) => {
                 svid = Some(s);
                 if attempt > 1 {
-                    eprintln!("Successfully fetched X.509 SVID after {} attempts", attempt);
+                    eprintln!("Successfully fetched X.509 SVID after {attempt} attempts");
                 }
                 break;
             }
             Err(e) => {
-                let error_str = format!("{:?}", e);
-                last_error_msg = Some(format!("{} ({})", e, error_str));
+                let error_str = format!("{e:?}");
+                last_error_msg = Some(format!("{e} ({error_str})"));
                 // If it's a permission denied error, the workload may still be attesting
                 if error_str.contains("PermissionDenied") && attempt < 10 {
                     // Wait before retrying (exponential backoff: 1s, 2s, 4s, 8s, 16s, etc., max 16s)
                     let delay = std::cmp::min(1u64 << (attempt - 1), 16);
                     eprintln!(
-                        "Attempt {} failed (PermissionDenied), retrying in {}s...",
-                        attempt, delay
+                        "Attempt {attempt} failed (PermissionDenied), retrying in {delay}s..."
                     );
                     tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
                     continue;
@@ -75,7 +74,7 @@ pub async fn fetch_and_write_x509_svid(
                 return Err(anyhow::anyhow!(
                     "Failed to fetch X.509 SVID from SPIRE agent after {} attempts: {}",
                     attempt,
-                    last_error_msg.as_ref().unwrap_or(&format!("{:?}", e))
+                    last_error_msg.as_ref().unwrap_or(&format!("{e:?}"))
                 ));
             }
         }
