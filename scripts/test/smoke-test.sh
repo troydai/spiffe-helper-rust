@@ -184,6 +184,28 @@ else
 fi
 echo ""
 
+# Test 9: Verify managed process signaling
+echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 9: Managed Process Signaling${COLOR_RESET}"
+if "${SCRIPT_DIR}/test-managed-process.sh"; then
+	echo -e "${COLOR_GREEN}✓${COLOR_RESET} Managed process signaling test passed"
+	TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+	echo -e "${COLOR_RED}✗${COLOR_RESET} Managed process signaling test failed"
+	TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+# Test 10: Verify PID file signaling
+echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}Test 10: PID File Signaling${COLOR_RESET}"
+if "${SCRIPT_DIR}/test-pid-file.sh"; then
+	echo -e "${COLOR_GREEN}✓${COLOR_RESET} PID file signaling test passed"
+	TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+	echo -e "${COLOR_RED}✗${COLOR_RESET} PID file signaling test failed"
+	TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
 # Summary
 echo -e "${COLOR_CYAN}[smoke-test]${COLOR_RESET} ${COLOR_BOLD}=== Test Summary ===${COLOR_RESET}"
 echo -e "${COLOR_GREEN}Passed: ${TESTS_PASSED}${COLOR_RESET}"

@@ -42,9 +42,8 @@ pub async fn run(config: Config) -> Result<()> {
     let mut child = if let Some(cmd) = &config.cmd {
         let mut command = Command::new(cmd);
         if let Some(args_str) = &config.cmd_args {
-            // Simple split by whitespace for args.
-            // TODO: More sophisticated parsing if needed (e.g. handling quotes)
-            command.args(args_str.split_whitespace());
+            let args = shell_words::split(args_str).context("Failed to parse cmd_args")?;
+            command.args(args);
         }
         println!(
             "Spawning managed process: {} {:?}",
