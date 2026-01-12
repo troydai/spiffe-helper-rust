@@ -18,14 +18,14 @@ pub fn parse_signal_name(name: &str) -> Result<Signal> {
         "USR1" => Ok(Signal::SIGUSR1),
         "USR2" => Ok(Signal::SIGUSR2),
         "WINCH" => Ok(Signal::SIGWINCH),
-        _ => Err(anyhow!("Unknown signal name: {}", name)),
+        _ => Err(anyhow!("Unknown signal name: {name}")),
     }
 }
 
 /// Send a signal to a process identified by PID
 pub fn send_signal(pid: i32, signal: Signal) -> Result<()> {
     nix::sys::signal::kill(Pid::from_raw(pid), signal)
-        .with_context(|| format!("Failed to send signal {:?} to process {}", signal, pid))
+        .with_context(|| format!("Failed to send signal {signal:?} to process {pid}"))
 }
 
 /// Read a PID from a file
