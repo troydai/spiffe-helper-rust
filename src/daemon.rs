@@ -10,6 +10,7 @@ use tokio::time::{interval, Duration};
 
 use crate::cli::Config;
 use crate::health;
+use crate::process;
 use crate::signal;
 use crate::workload_api;
 
@@ -42,7 +43,7 @@ pub async fn run(config: Config) -> Result<()> {
     let mut child = if let Some(cmd) = &config.cmd {
         let mut command = Command::new(cmd);
         if let Some(args_str) = &config.cmd_args {
-            let args = shell_words::split(args_str).context("Failed to parse cmd_args")?;
+            let args = process::parse_cmd_args(args_str)?;
             command.args(args);
         }
         println!(
