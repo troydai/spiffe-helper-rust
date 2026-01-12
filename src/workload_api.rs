@@ -592,8 +592,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_write_svid_to_files_success() {
+    #[test]
+    fn test_write_svid_to_files_success() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
         let svid = get_test_svid();
@@ -609,8 +609,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(key_content.contains("BEGIN PRIVATE KEY"));
     }
 
-    #[tokio::test]
-    async fn test_write_bundle_to_file_success() {
+    #[test]
+    fn test_write_bundle_to_file_success() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
         let bundle = get_test_bundle();
@@ -622,8 +622,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(content.contains("BEGIN CERTIFICATE"));
     }
 
-    #[tokio::test]
-    async fn test_write_x509_svid_on_update_writes_files() {
+    #[test]
+    fn test_write_x509_svid_on_update_writes_files() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
 
@@ -645,8 +645,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(cert_dir.join("svid_bundle.pem").exists());
     }
 
-    #[tokio::test]
-    async fn test_write_x509_svid_on_update_no_cert_dir() {
+    #[test]
+    fn test_write_x509_svid_on_update_no_cert_dir() {
         let svid = get_test_svid();
         let bundle = get_test_bundle();
         let config = Config::default();
