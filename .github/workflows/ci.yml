@@ -79,7 +79,9 @@ jobs:
 
   smoke-test:
     needs: changes
-    if: needs.changes.outputs.product == 'true'
+    if: |
+      needs.changes.outputs.product == 'true' &&
+      !contains(github.event.pull_request.title, 'skip-smoke')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

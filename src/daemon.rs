@@ -47,8 +47,7 @@ pub async fn run(config: Config) -> Result<()> {
             command.args(args);
         }
         println!(
-            "Spawning managed process: {} {:?}",
-            cmd,
+            "Spawning managed process: {cmd} {:?}",
             config.cmd_args.as_deref().unwrap_or("")
         );
         Some(command.spawn().context("Failed to spawn managed process")?)
