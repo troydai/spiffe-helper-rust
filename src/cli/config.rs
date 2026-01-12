@@ -4,6 +4,30 @@ use std::fs;
 
 use crate::cli::health_check::HealthChecks;
 
+const DEFAULT_LIVENESS_PATH: &str = "/health/live";
+const DEFAULT_READINESS_PATH: &str = "/health/ready";
+
+impl HealthChecks {
+    #[must_use]
+    pub fn bind_addr(&self) -> String {
+        format!("0.0.0.0:{}", self.bind_port)
+    }
+
+    #[must_use]
+    pub fn liveness_path(&self) -> String {
+        self.liveness_path
+            .clone()
+            .unwrap_or_else(|| DEFAULT_LIVENESS_PATH.to_string())
+    }
+
+    #[must_use]
+    pub fn readiness_path(&self) -> String {
+        self.readiness_path
+            .clone()
+            .unwrap_or_else(|| DEFAULT_READINESS_PATH.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtSvid {
     pub jwt_audience: String,
@@ -37,14 +61,17 @@ pub struct Config {
 }
 
 impl Config {
+    #[must_use]
     pub fn svid_file_name(&self) -> &str {
         self.svid_file_name.as_deref().unwrap_or("svid.pem")
     }
 
+    #[must_use]
     pub fn svid_key_file_name(&self) -> &str {
         self.svid_key_file_name.as_deref().unwrap_or("svid_key.pem")
     }
 
+    #[must_use]
     pub fn svid_bundle_file_name(&self) -> &str {
         self.svid_bundle_file_name
             .as_deref()
@@ -63,6 +90,7 @@ impl Config {
         }
     }
 
+    #[must_use]
     pub fn is_daemon_mode(&self) -> bool {
         self.daemon_mode.unwrap_or(true)
     }
