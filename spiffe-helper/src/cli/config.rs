@@ -71,6 +71,34 @@ impl Config {
         self.daemon_mode.unwrap_or(true)
     }
 
+    pub fn cert_file_mode(&self) -> u32 {
+        self.cert_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o644)
+    }
+
+    pub fn key_file_mode(&self) -> u32 {
+        self.key_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o600)
+    }
+
+    pub fn jwt_bundle_file_mode(&self) -> u32 {
+        self.jwt_bundle_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o644)
+    }
+
+    pub fn jwt_svid_file_mode(&self) -> u32 {
+        self.jwt_svid_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o644)
+    }
+
     /// Validates required configuration fields based on the operation mode.
     ///
     /// Both daemon and one-shot modes require `agent_address` and `cert_dir` to be configured
