@@ -2,6 +2,21 @@
 
 This directory contains example configurations for `spiffe-helper-rust`.
 
+## Simple Configuration
+
+The [simple.conf](./simple.conf) example shows the most basic usage of `spiffe-helper-rust`.
+
+```hcl
+agent_address = "unix:///run/spire/sockets/agent.sock"
+cert_dir = "./certs"
+```
+
+In this mode:
+1. `spiffe-helper-rust` fetches the SVID and trust bundle from the SPIRE agent.
+2. It writes them to the specified `cert_dir`.
+3. It keeps them renewed automatically.
+4. No signals are sent, and no child processes are managed.
+
 ## Managed Process
 
 The [managed_process.conf](./managed_process.conf) example shows how to use `spiffe-helper-rust` to manage a child process (like Nginx).
