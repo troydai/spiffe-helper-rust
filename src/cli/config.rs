@@ -37,17 +37,14 @@ pub struct Config {
 }
 
 impl Config {
-    #[must_use]
     pub fn svid_file_name(&self) -> &str {
         self.svid_file_name.as_deref().unwrap_or("svid.pem")
     }
 
-    #[must_use]
     pub fn svid_key_file_name(&self) -> &str {
         self.svid_key_file_name.as_deref().unwrap_or("svid_key.pem")
     }
 
-    #[must_use]
     pub fn svid_bundle_file_name(&self) -> &str {
         self.svid_bundle_file_name
             .as_deref()
@@ -66,7 +63,6 @@ impl Config {
         }
     }
 
-    #[must_use]
     pub fn is_daemon_mode(&self) -> bool {
         self.daemon_mode.unwrap_or(true)
     }

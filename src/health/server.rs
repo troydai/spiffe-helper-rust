@@ -55,7 +55,6 @@ impl HealthCheckServer {
     }
 
     /// Returns true if the health check server is enabled.
-    #[must_use]
     pub fn is_enabled(&self) -> bool {
         matches!(self, HealthCheckServer::Enabled { .. })
     }

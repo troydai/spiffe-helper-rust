@@ -24,7 +24,6 @@ pub struct HealthStatus {
 
 impl HealthStatus {
     /// Check if the helper is live (no recent failures)
-    #[must_use]
     pub fn is_live(&self) -> bool {
         // Live if X.509 SVID write succeeded (at minimum)
         self.x509_svid.write_succeeded
@@ -34,7 +33,6 @@ impl HealthStatus {
     }
 
     /// Check if the helper is ready (all initial writes complete)
-    #[must_use]
     pub fn is_ready(&self) -> bool {
         // Ready if all configured credentials have been written at least once
         self.x509_svid.last_success.is_some()
@@ -54,7 +52,6 @@ impl HealthStatus {
 pub type SharedHealthStatus = Arc<RwLock<HealthStatus>>;
 
 /// Create a new shared health status instance
-#[must_use]
 pub fn create_health_status() -> SharedHealthStatus {
     Arc::new(RwLock::new(HealthStatus::default()))
 }

@@ -12,19 +12,16 @@ pub struct HealthChecks {
 }
 
 impl HealthChecks {
-    #[must_use]
     pub fn bind_addr(&self) -> String {
         format!("0.0.0.0:{}", self.bind_port)
     }
 
-    #[must_use]
     pub fn liveness_path(&self) -> String {
         self.liveness_path
             .clone()
             .unwrap_or_else(|| DEFAULT_LIVENESS_PATH.to_string())
     }
 
-    #[must_use]
     pub fn readiness_path(&self) -> String {
         self.readiness_path
             .clone()
