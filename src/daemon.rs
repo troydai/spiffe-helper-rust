@@ -197,5 +197,5 @@ async fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> 
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    workload_api::write_x509_svid_on_update(&svid, &bundle, config).await
+    workload_api::write_x509_svid_on_update(&svid, &bundle, config)
 }

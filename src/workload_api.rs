@@ -54,7 +54,7 @@ async fn fetch_and_write_x509_svid_with_factory(
         .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
 
-    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name).await?;
+    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name)?;
 
     // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
     let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
@@ -75,7 +75,7 @@ async fn fetch_and_write_x509_svid_with_factory(
 }
 
 /// Writes the X.509 SVID to the specified directory.
-async fn write_svid_to_files(
+fn write_svid_to_files(
     svid: &X509Svid,
     cert_dir: &Path,
     svid_file_name: &str,
@@ -118,7 +118,7 @@ async fn write_svid_to_files(
 }
 
 /// Writes the X.509 trust bundle to the specified directory.
-async fn write_bundle_to_file(
+fn write_bundle_to_file(
     bundle: &X509Bundle,
     cert_dir: &Path,
     bundle_file_name: &str,
@@ -146,7 +146,7 @@ async fn write_bundle_to_file(
 
 /// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.
 ///
-/// This function is called when the X509Source receives an update notification.
+/// This function is called when the `X509Source` receives an update notification.
 /// It writes the updated SVID (certificate and private key) and trust bundle to the configured directory.
 ///
 /// # Arguments
@@ -154,7 +154,7 @@ async fn write_bundle_to_file(
 /// * `svid` - The updated X509 SVID containing the certificate chain and private key
 /// * `bundle` - The trust bundle containing CA certificates
 /// * `config` - Configuration containing output paths
-pub async fn write_x509_svid_on_update(
+pub fn write_x509_svid_on_update(
     svid: &X509Svid,
     bundle: &X509Bundle,
     config: &Config,
@@ -170,10 +170,9 @@ pub async fn write_x509_svid_on_update(
         cert_dir_path,
         config.svid_file_name(),
         config.svid_key_file_name(),
-    )
-    .await?;
+    )?;
 
-    write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name()).await?;
+    write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name())?;
 
     // Log update with SPIFFE ID and certificate expiry
     let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
@@ -233,8 +232,7 @@ impl X509SourceFactory {
                 async move {
                     if attempt > 1 {
                         eprintln!(
-                            "Retry attempt {} to create X509Source (address={})",
-                            attempt, addr
+                            "Retry attempt {attempt} to create X509Source (address={addr})"
                         );
                     }
                     let client = create_workload_api_client(&addr).await?;
@@ -250,8 +248,7 @@ impl X509SourceFactory {
                 if !retryable {
                     let error_category = categorize_error(err);
                     eprintln!(
-                        "Non-retryable error during X509Source creation: category={}, error={:?}",
-                        error_category, err
+                        "Non-retryable error during X509Source creation: category={error_category}, error={err:?}"
                     );
                 }
                 retryable
@@ -261,10 +258,7 @@ impl X509SourceFactory {
         .map_err(|e| {
             let error_category = categorize_error(&e);
             anyhow::anyhow!(
-                "Failed to create X509Source from SPIRE agent after {} attempts: category={}, error={}",
-                attempt,
-                error_category,
-                e
+                "Failed to create X509Source from SPIRE agent after {attempt} attempts: category={error_category}, error={e}"
             )
         })
     }
@@ -289,12 +283,7 @@ async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> 
 
     WorkloadApiClient::new_from_path(&address)
         .await
-        .with_context(|| {
-            format!(
-                "Failed to create WorkloadApiClient from address: {}",
-                address
-            )
-        })
+        .with_context(|| format!("Failed to create WorkloadApiClient from address: {address}"))
 }
 
 fn is_retryable_error(err: &anyhow::Error) -> bool {
@@ -358,7 +347,7 @@ mod tests {
     use std::time::Instant;
     use tempfile::TempDir;
 
-    const TEST_CERT_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+    const TEST_CERT_PEM: &str = r"-----BEGIN CERTIFICATE-----
 MIIDNTCCAh2gAwIBAgIUGq/oNncXam0A9VgyVENC8GuQn/gwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI1MTIyOTAwNTYyOVoXDTI2MTIy
 OTAwNTYyOVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
@@ -377,9 +366,9 @@ XzjpK0rIywC6cdaqYMDcIUyqNCO2l2FvccN7flo2pnppj6w55kv+FTX0C+AUv3qC
 p2OFoxDKsFWk52J0qXR/QefV5fFnrOLgqI2zCbyxSr7EZzGW9Fbr+YrpzXfI8Z0b
 8GGRaPE6WbPGjvc97Uwmp3T+4UkJatFnaAHnTsRikdbZ1F0xNcvE13pltbG3vFk0
 lQluKI5/n4db
------END CERTIFICATE-----"#;
+-----END CERTIFICATE-----";
 
-    const TEST_KEY_PEM: &str = r#"-----BEGIN PRIVATE KEY-----
+    const TEST_KEY_PEM: &str = r"-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDWfSLWEw9Kgfsn
 5dG5HWPpVL3d93i35E19Wn9rvK9pk5F/RpJZgripnLuDPKzUoftqRA434sKnDpFO
 IhaKYDMBnZjHwMzFtLMfg9gxDtREjv8xFQ9fPeoLBu5u2QnA01sVv7Hx3zsdHsak
@@ -406,7 +395,7 @@ adLDLFi/w1FVUI9Jg+St+uKT00xvMqoocuI9U0ECgYEAzlapqhd+CXpy7KQKNtRt
 A/lJGE6bkB2JNXbr01DthVr5JSDPz39AxTRB9VeRUt5irB8f7OvmS7fy6+FY9Jxn
 QBAx6pG1tAXOEZt4R56+FIKBFcHJFB0ja/RQDRDLCZl+KFUDfgRNvomZx1lWBicI
 fPfrHw1nYcPliVB4Zbv8d1w=
------END PRIVATE KEY-----"#;
+-----END PRIVATE KEY-----";
 
     fn get_test_svid() -> X509Svid {
         let cert_der = pem::parse(TEST_CERT_PEM).unwrap().contents;
@@ -610,9 +599,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let cert_dir = temp_dir.path();
         let svid = get_test_svid();
 
-        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem")
-            .await
-            .unwrap();
+        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem").unwrap();
 
         assert!(cert_dir.join("svid.pem").exists());
         assert!(cert_dir.join("svid_key.pem").exists());
@@ -629,9 +616,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let cert_dir = temp_dir.path();
         let bundle = get_test_bundle();
 
-        write_bundle_to_file(&bundle, cert_dir, "bundle.pem")
-            .await
-            .unwrap();
+        write_bundle_to_file(&bundle, cert_dir, "bundle.pem").unwrap();
 
         assert!(cert_dir.join("bundle.pem").exists());
         let content = fs::read_to_string(cert_dir.join("bundle.pem")).unwrap();
@@ -653,7 +638,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let svid = get_test_svid();
         let bundle = get_test_bundle();
 
-        let result = write_x509_svid_on_update(&svid, &bundle, &config).await;
+        let result = write_x509_svid_on_update(&svid, &bundle, &config);
         assert!(result.is_ok());
 
         assert!(cert_dir.join("test_svid.pem").exists());
@@ -667,7 +652,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let bundle = get_test_bundle();
         let config = Config::default();
 
-        let result = write_x509_svid_on_update(&svid, &bundle, &config).await;
+        let result = write_x509_svid_on_update(&svid, &bundle, &config);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
