@@ -47,8 +47,7 @@ pub async fn run(config: Config) -> Result<()> {
             command.args(args);
         }
         println!(
-            "Spawning managed process: {} {:?}",
-            cmd,
+            "Spawning managed process: {cmd} {:?}",
             config.cmd_args.as_deref().unwrap_or("")
         );
         Some(command.spawn().context("Failed to spawn managed process")?)
@@ -89,22 +88,29 @@ pub async fn run(config: Config) -> Result<()> {
             // Watch for updates from X509Source
             res = update_channel.changed() => {
                  if let Err(e) = res {
-                     eprintln!("Update channel closed: {}", e);
+                     eprintln!("Update channel closed: {e}");
                      break Err(anyhow::anyhow!("X509Source update channel closed"));
                  }
 
                  println!("Received X.509 update notification");
                  if let Err(e) = fetch_and_process_update(&source, &config) {
-                     eprintln!("Failed to handle X.509 update: {}", e);
+                     eprintln!("Failed to handle X.509 update: {e}");
                  } else {
                      // Successfully updated certificates, now send signal if configured
                      if let Some(sig) = renew_signal {
                          // Signal managed child process
                          if let Some(ref c) = child {
                              if let Some(pid) = c.id() {
-                                 println!("Sending signal {:?} to managed process (PID: {})", sig, pid);
-                                 if let Err(e) = signal::send_signal(pid as i32, sig) {
-                                     eprintln!("Failed to signal managed process: {}", e);
+                                 println!("Sending signal {sig:?} to managed process (PID: {pid})");
+                                 match i32::try_from(pid) {
+                                     Ok(pid_i32) => {
+                                         if let Err(e) = signal::send_signal(pid_i32, sig) {
+                                             eprintln!("Failed to signal managed process: {e}");
+                                         }
+                                     }
+                                     Err(e) => {
+                                         eprintln!("Failed to convert PID {pid} to i32: {e}");
+                                     }
                                  }
                              }
                          }
@@ -113,13 +119,13 @@ pub async fn run(config: Config) -> Result<()> {
                          if let Some(pid_file) = &config.pid_file_name {
                              match signal::read_pid_from_file(Path::new(pid_file)) {
                                  Ok(pid) => {
-                                     println!("Sending signal {:?} to process from PID file {} (PID: {})", sig, pid_file, pid);
+                                     println!("Sending signal {sig:?} to process from PID file {pid_file} (PID: {pid})");
                                      if let Err(e) = signal::send_signal(pid, sig) {
-                                         eprintln!("Failed to signal process from PID file: {}", e);
+                                         eprintln!("Failed to signal process from PID file: {e}");
                                      }
                                  }
                                  Err(e) => {
-                                     eprintln!("Failed to read PID from file {}: {}", pid_file, e);
+                                     eprintln!("Failed to read PID from file {pid_file}: {e}");
                                  }
                              }
                          }
@@ -135,9 +141,9 @@ pub async fn run(config: Config) -> Result<()> {
             }, if child.is_some() => {
                 let status_str = match status {
                     Ok(s) => s.to_string(),
-                    Err(e) => format!("error: {}", e),
+                    Err(e) => format!("error: {e}"),
                 };
-                println!("Managed process exited: {}", status_str);
+                println!("Managed process exited: {status_str}");
                 // Depending on requirements, we might want to restart it or exit.
                 // For now, we'll just stop managing it and continue running the daemon.
                 child = None;
@@ -189,12 +195,12 @@ pub async fn run(config: Config) -> Result<()> {
 fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
     let svid = source
         .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
 
     let bundle = source
         .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
-        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
     workload_api::write_x509_svid_on_update(&svid, &bundle, config)

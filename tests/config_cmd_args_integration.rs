@@ -1,6 +1,6 @@
-//! Integration tests for cmd_args configuration parsing.
+//! Integration tests for `cmd_args` configuration parsing.
 //!
-//! These tests verify that cmd_args is correctly parsed from HCL configuration
+//! These tests verify that `cmd_args` is correctly parsed from HCL configuration
 //! files and can be used with the process module.
 
 use spiffe_helper_rust::cli::config::parse_hcl_config;
@@ -16,7 +16,7 @@ fn create_temp_config(content: &str) -> NamedTempFile {
     file
 }
 
-/// Test parsing a config with simple cmd_args.
+/// Test parsing a config with simple `cmd_args`.
 #[test]
 fn test_config_with_simple_cmd_args() {
     let config_content = r#"
@@ -40,7 +40,7 @@ fn test_config_with_simple_cmd_args() {
     assert_eq!(args, vec!["-c", "/etc/nginx/nginx.conf"]);
 }
 
-/// Test parsing a config with quoted cmd_args containing spaces.
+/// Test parsing a config with quoted `cmd_args` containing spaces.
 #[test]
 fn test_config_with_quoted_cmd_args() {
     let config_content = r#"
@@ -64,7 +64,7 @@ fn test_config_with_quoted_cmd_args() {
     assert_eq!(args, vec!["-c", "echo hello world"]);
 }
 
-/// Test parsing a config with complex cmd_args (nginx daemon off style).
+/// Test parsing a config with complex `cmd_args` (nginx daemon off style).
 #[test]
 fn test_config_with_complex_cmd_args() {
     let config_content = r#"
@@ -85,7 +85,7 @@ fn test_config_with_complex_cmd_args() {
     );
 }
 
-/// Test parsing a config with path containing spaces in cmd_args.
+/// Test parsing a config with path containing spaces in `cmd_args`.
 #[test]
 fn test_config_with_path_spaces_in_cmd_args() {
     let config_content = r#"
@@ -103,7 +103,7 @@ fn test_config_with_path_spaces_in_cmd_args() {
     assert_eq!(args, vec!["/path/with spaces/config.conf"]);
 }
 
-/// Test parsing a config without cmd_args.
+/// Test parsing a config without `cmd_args`.
 #[test]
 fn test_config_without_cmd_args() {
     let config_content = r#"
@@ -135,7 +135,7 @@ fn test_config_without_cmd() {
     assert_eq!(config.cmd_args, None);
 }
 
-/// Test parsing a config with empty cmd_args.
+/// Test parsing a config with empty `cmd_args`.
 #[test]
 fn test_config_with_empty_cmd_args() {
     let config_content = r#"
@@ -148,14 +148,14 @@ fn test_config_with_empty_cmd_args() {
     let file = create_temp_config(config_content);
     let config = parse_hcl_config(file.path()).unwrap();
 
-    assert_eq!(config.cmd_args, Some("".to_string()));
+    assert_eq!(config.cmd_args, Some(String::new()));
 
     // Verify empty args can be parsed
     let args = parse_cmd_args(config.cmd_args.as_ref().unwrap()).unwrap();
     assert!(args.is_empty());
 }
 
-/// Test parsing a config with cmd_args and renew_signal for managed process.
+/// Test parsing a config with `cmd_args` and `renew_signal` for managed process.
 #[test]
 fn test_config_managed_process_with_signal() {
     let config_content = r#"

@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 /// Parse command arguments string into individual arguments
 /// Handles quoted strings and escapes using POSIX shell-style parsing
 pub fn parse_cmd_args(args_str: &str) -> Result<Vec<String>> {
-    shell_words::split(args_str).map_err(|e| anyhow!("Failed to parse cmd_args: {}", e))
+    shell_words::split(args_str).map_err(|e| anyhow!("Failed to parse cmd_args: {e}"))
 }
 
 #[cfg(test)]
@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_parse_cmd_args_escaped_spaces() {
-        let args = parse_cmd_args(r#"-c file\ name"#).unwrap();
+        let args = parse_cmd_args(r"-c file\ name").unwrap();
         assert_eq!(args, vec!["-c", "file name"]);
     }
 
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_parse_cmd_args_complex_example() {
-        let args = parse_cmd_args(r#"-c /etc/nginx/nginx.conf -g 'daemon off;'"#).unwrap();
+        let args = parse_cmd_args(r"-c /etc/nginx/nginx.conf -g 'daemon off;'").unwrap();
         assert_eq!(
             args,
             vec!["-c", "/etc/nginx/nginx.conf", "-g", "daemon off;"]

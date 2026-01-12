@@ -1,13 +1,13 @@
-//! Integration tests for process spawning with cmd_args parsing.
+//! Integration tests for process spawning with `cmd_args` parsing.
 //!
-//! These tests verify that the cmd_args parsing integrates correctly with
+//! These tests verify that the `cmd_args` parsing integrates correctly with
 //! process spawning, testing the full flow from configuration to execution.
 
 use spiffe_helper_rust::process::parse_cmd_args;
 use std::process::Command;
 use tempfile::tempdir;
 
-/// Test that parse_cmd_args correctly parses arguments that can be used with Command.
+/// Test that `parse_cmd_args` correctly parses arguments that can be used with Command.
 #[test]
 fn test_parse_cmd_args_with_command_execution() {
     // Parse arguments for echo command
@@ -136,7 +136,7 @@ fn test_parse_cmd_args_unclosed_quote_error() {
 #[test]
 fn test_parse_cmd_args_nginx_style() {
     // Real-world example: nginx configuration
-    let args = parse_cmd_args(r#"-c /etc/nginx/nginx.conf -g 'daemon off;'"#).unwrap();
+    let args = parse_cmd_args(r"-c /etc/nginx/nginx.conf -g 'daemon off;'").unwrap();
     assert_eq!(
         args,
         vec!["-c", "/etc/nginx/nginx.conf", "-g", "daemon off;"]
@@ -147,7 +147,7 @@ fn test_parse_cmd_args_nginx_style() {
 #[test]
 fn test_parse_cmd_args_backslash_escapes() {
     // Escaped space
-    let args = parse_cmd_args(r#"file\ name"#).unwrap();
+    let args = parse_cmd_args(r"file\ name").unwrap();
     assert_eq!(args, vec!["file name"]);
 
     // Escaped quote inside quoted string
