@@ -205,6 +205,7 @@ impl Default for X509SourceFactory {
 }
 
 impl X509SourceFactory {
+    #[must_use]
     pub fn new() -> Self {
         let retry_strategy = ExponentialBackoff::from_millis(1000)
             .max_delay(Duration::from_secs(16))
@@ -268,11 +269,13 @@ impl X509SourceFactory {
         })
     }
 
+    #[must_use]
     pub fn with_retry(mut self, strategy: Take<ExponentialBackoff>) -> Self {
         self.retry_strategy = strategy;
         self
     }
 
+    #[must_use]
     pub fn with_address(mut self, address: &str) -> Self {
         self.address = address.to_string();
         self
