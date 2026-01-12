@@ -37,7 +37,7 @@ pub async fn run(config: Config) -> Result<()> {
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write
-    fetch_and_process_update(&source, &config).await?;
+    fetch_and_process_update(&source, &config)?;
 
     // Spawn managed child process if configured
     let mut child = if let Some(cmd) = &config.cmd {
@@ -94,7 +94,7 @@ pub async fn run(config: Config) -> Result<()> {
                  }
 
                  println!("Received X.509 update notification");
-                 if let Err(e) = fetch_and_process_update(&source, &config).await {
+                 if let Err(e) = fetch_and_process_update(&source, &config) {
                      eprintln!("Failed to handle X.509 update: {}", e);
                  } else {
                      // Successfully updated certificates, now send signal if configured
@@ -186,7 +186,7 @@ pub async fn run(config: Config) -> Result<()> {
     result
 }
 
-async fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
     let svid = source
         .get_svid()
         .map_err(|e| anyhow::anyhow!("Failed to get SVID: {}", e))?
@@ -197,5 +197,5 @@ async fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> 
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    workload_api::write_x509_svid_on_update(&svid, &bundle, config).await
+    workload_api::write_x509_svid_on_update(&svid, &bundle, config)
 }
