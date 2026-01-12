@@ -2,37 +2,7 @@ use anyhow::{anyhow, Context, Ok, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthChecks {
-    pub listener_enabled: bool,
-    pub bind_port: u16,
-    pub liveness_path: Option<String>,
-    pub readiness_path: Option<String>,
-}
-
-const DEFAULT_LIVENESS_PATH: &str = "/health/live";
-const DEFAULT_READINESS_PATH: &str = "/health/ready";
-
-impl HealthChecks {
-    #[must_use]
-    pub fn bind_addr(&self) -> String {
-        format!("0.0.0.0:{}", self.bind_port)
-    }
-
-    #[must_use]
-    pub fn liveness_path(&self) -> String {
-        self.liveness_path
-            .clone()
-            .unwrap_or_else(|| DEFAULT_LIVENESS_PATH.to_string())
-    }
-
-    #[must_use]
-    pub fn readiness_path(&self) -> String {
-        self.readiness_path
-            .clone()
-            .unwrap_or_else(|| DEFAULT_READINESS_PATH.to_string())
-    }
-}
+use crate::cli::health_check::HealthChecks;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtSvid {
@@ -118,17 +88,15 @@ impl Config {
 
         if self.agent_address.is_none() {
             anyhow::bail!(
-                "agent_address must be configured for {} mode.\n\
-                 Set it in your config file: agent_address = \"unix:///run/spire/sockets/agent.sock\"",
-                mode_name
+                "agent_address must be configured for {mode_name} mode.\n\
+                 Set it in your config file: agent_address = \"unix:///run/spire/sockets/agent.sock\""
             );
         }
 
         if self.cert_dir.is_none() {
             anyhow::bail!(
-                "cert_dir must be configured for {} mode.\n\
-                 Set it in your config file: cert_dir = \"/path/to/certs\"",
-                mode_name
+                "cert_dir must be configured for {mode_name} mode.\n\
+                 Set it in your config file: cert_dir = \"/path/to/certs\""
             );
         }
 
@@ -268,9 +236,7 @@ fn extract_bool(val: &hcl::Value) -> anyhow::Result<Option<bool>> {
 }
 
 fn extract_jwt_svids(val: &hcl::Value) -> anyhow::Result<Option<Vec<JwtSvid>>> {
-    let arr = if let hcl::Value::Array(arr) = val {
-        arr
-    } else {
+    let hcl::Value::Array(arr) = val else {
         return Err(anyhow!("given value is not an array"));
     };
 
@@ -284,9 +250,7 @@ fn extract_jwt_svids(val: &hcl::Value) -> anyhow::Result<Option<Vec<JwtSvid>>> {
 }
 
 fn parse_jwt_svid(value: &hcl::Value) -> Option<JwtSvid> {
-    let obj = if let hcl::Value::Object(obj) = value {
-        obj
-    } else {
+    let hcl::Value::Object(obj) = value else {
         return None;
     };
 
@@ -379,11 +343,8 @@ fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks
 /// If port number is beyond the legal range [0,65535], an error will be returned.
 fn extract_port(val: &hcl::Value) -> anyhow::Result<u16> {
     if let Some(num) = val.as_u64() {
-        if num > 65535 {
-            return Err(anyhow::anyhow!("port number MUST not be larger than 65535"));
-        }
-
-        return Ok(num as u16);
+        return u16::try_from(num)
+            .map_err(|_| anyhow::anyhow!("port number MUST not be larger than 65535"));
     }
 
     Err(anyhow!("given value is not a number"))
@@ -658,9 +619,7 @@ mod tests {
             jwt_svid_file_name = "svid1.jwt"
         "#;
         let value = parse_hcl_value(hcl_str);
-        let obj = if let hcl::Value::Object(obj) = value {
-            obj
-        } else {
+        let hcl::Value::Object(obj) = value else {
             panic!("Expected object");
         };
 
@@ -684,9 +643,7 @@ mod tests {
             jwt_extra_audiences = ["extra1", "extra2"]
         "#;
         let value = parse_hcl_value(hcl_str);
-        let obj = if let hcl::Value::Object(obj) = value {
-            obj
-        } else {
+        let hcl::Value::Object(obj) = value else {
             panic!("Expected object");
         };
 
@@ -711,9 +668,7 @@ mod tests {
             jwt_audience = "audience3"
         "#;
         let value = parse_hcl_value(hcl_str);
-        let obj = if let hcl::Value::Object(obj) = value {
-            obj
-        } else {
+        let hcl::Value::Object(obj) = value else {
             panic!("Expected object");
         };
 
@@ -731,9 +686,7 @@ mod tests {
             jwt_svid_file_name = "svid3.jwt"
         "#;
         let value = parse_hcl_value(hcl_str);
-        let obj = if let hcl::Value::Object(obj) = value {
-            obj
-        } else {
+        let hcl::Value::Object(obj) = value else {
             panic!("Expected object");
         };
 

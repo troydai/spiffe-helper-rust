@@ -502,8 +502,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(result.is_err());
         assert!(
             duration < Duration::from_millis(500),
-            "Should fail fast on non-retryable error, took {:?}",
-            duration
+            "Should fail fast on non-retryable error, took {duration:?}"
         );
     }
 

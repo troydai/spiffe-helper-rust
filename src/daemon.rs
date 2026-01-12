@@ -55,12 +55,7 @@ pub async fn run(config: Config) -> Result<()> {
         None
     };
 
-    // Start health check server if enabled
-    let health_checks = config.health_checks.clone();
-    let mut health_server_handle = match &health_checks {
-        Some(hc) => health::start_server(hc).await?,
-        None => None,
-    };
+    let mut health_server = health::HealthCheckServer::new(config.health_checks.as_ref()).await?;
 
     // Set up signal handling for graceful shutdown
     let mut sigterm =
@@ -149,25 +144,16 @@ pub async fn run(config: Config) -> Result<()> {
                 child = None;
             }
             // If health server is running, watch for its completion (which indicates failure)
-            Some(res) = async {
-                match &mut health_server_handle {
-                    Some(handle) => Some(handle.await),
-                    None => std::future::pending().await,
-                }
-            } => {
+            res = health_server.wait(), if health_server.is_enabled() => {
                 match res {
-                    Ok(Ok(())) => {
+                    Ok(()) => {
                         // Server exited cleanly (shouldn't happen normally)
                         println!("Health check server exited unexpectedly");
                         break Ok(());
                     }
-                    Ok(Err(e)) => {
+                    Err(e) => {
                         // Server returned an error
                         break Err(e);
-                    }
-                    Err(e) => {
-                        // Task panicked or was cancelled
-                        break Err(anyhow::anyhow!("Health check server task failed: {e}"));
                     }
                 }
             }
@@ -181,12 +167,7 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     // Shutdown health check server if it was started and still running
-    if let Some(ref handle) = health_server_handle {
-        if !handle.is_finished() {
-            handle.abort();
-            println!("Health check server stopped");
-        }
-    }
+    health_server.shutdown();
 
     println!("Daemon shutdown complete");
     result
