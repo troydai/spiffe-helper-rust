@@ -4,30 +4,6 @@ use std::fs;
 
 use crate::cli::health_check::HealthChecks;
 
-const DEFAULT_LIVENESS_PATH: &str = "/health/live";
-const DEFAULT_READINESS_PATH: &str = "/health/ready";
-
-impl HealthChecks {
-    #[must_use]
-    pub fn bind_addr(&self) -> String {
-        format!("0.0.0.0:{}", self.bind_port)
-    }
-
-    #[must_use]
-    pub fn liveness_path(&self) -> String {
-        self.liveness_path
-            .clone()
-            .unwrap_or_else(|| DEFAULT_LIVENESS_PATH.to_string())
-    }
-
-    #[must_use]
-    pub fn readiness_path(&self) -> String {
-        self.readiness_path
-            .clone()
-            .unwrap_or_else(|| DEFAULT_READINESS_PATH.to_string())
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtSvid {
     pub jwt_audience: String,

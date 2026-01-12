@@ -98,8 +98,15 @@ pub async fn run(config: Config) -> Result<()> {
                          if let Some(ref c) = child {
                              if let Some(pid) = c.id() {
                                  println!("Sending signal {sig:?} to managed process (PID: {pid})");
-                                 if let Err(e) = signal::send_signal(pid as i32, sig) {
-                                     eprintln!("Failed to signal managed process: {e}");
+                                 match i32::try_from(pid) {
+                                     Ok(pid_i32) => {
+                                         if let Err(e) = signal::send_signal(pid_i32, sig) {
+                                             eprintln!("Failed to signal managed process: {e}");
+                                         }
+                                     }
+                                     Err(e) => {
+                                         eprintln!("Failed to convert PID {pid} to i32: {e}");
+                                     }
                                  }
                              }
                          }
