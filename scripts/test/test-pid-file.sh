@@ -22,7 +22,7 @@ cleanup() {
     kubectl delete configmap -n "$NAMESPACE" spiffe-helper-pid-config --ignore-not-found > /dev/null 2>&1 || true
     kubectl delete serviceaccount -n "$NAMESPACE" test-sa --ignore-not-found > /dev/null 2>&1 || true
     kubectl delete namespace "$NAMESPACE" --ignore-not-found > /dev/null 2>&1 || true
-    rm -f helper.conf
+    rm -f helper.conf entrypoint.sh
 }
 
 trap cleanup EXIT
@@ -52,13 +52,11 @@ kubectl exec -n spire-server "$SPIRE_SERVER_POD" -- \
     -selector "k8s:ns:${NAMESPACE}" \
     -selector "k8s:sa:test-sa" > /dev/null 2>&1 || true
 
-# Create configuration file
+# Create configuration file (no cmd - we're testing PID file signaling to an external process)
 cat <<EOF > helper.conf
 agent_address = "unix:///run/spire/sockets/agent.sock"
 daemon_mode = true
 cert_dir = "/tmp/certs"
-cmd = "/bin/sh"
-cmd_args = "-c \"echo \$\$ > /tmp/my-app.pid; trap 'echo RECEIVED_SIGUSR2_VIA_PID_FILE' USR2; echo PID_PROCESS_STARTED; while true; do sleep 1; done\""
 pid_file_name = "/tmp/my-app.pid"
 renew_signal = "SIGUSR2"
 health_checks {
@@ -66,9 +64,29 @@ health_checks {
 }
 EOF
 
-# Create ConfigMap from file
+# Create entrypoint script that starts external process then spiffe-helper
+cat <<'SCRIPT' > entrypoint.sh
+#!/bin/sh
+# Start the external process in background
+(
+    trap 'echo RECEIVED_SIGUSR2_VIA_PID_FILE' USR2
+    echo "PID_PROCESS_STARTED"
+    while true; do sleep 1; done
+) &
+
+# Get the background process PID and write it to the PID file
+BG_PID=$!
+echo $BG_PID > /tmp/my-app.pid
+echo "Written PID $BG_PID to /tmp/my-app.pid"
+
+# Start spiffe-helper in foreground
+exec /usr/local/bin/spiffe-helper-rust --config /etc/spiffe-helper/helper.conf
+SCRIPT
+
+# Create ConfigMap from files
 kubectl create configmap spiffe-helper-pid-config -n "$NAMESPACE" \
     --from-file=helper.conf \
+    --from-file=entrypoint.sh \
     --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1
 
 # Create Pod
@@ -84,7 +102,7 @@ spec:
   - name: spiffe-helper
     image: spiffe-helper-rust:test
     imagePullPolicy: Never
-    args: ["/usr/local/bin/spiffe-helper-rust", "--config", "/etc/spiffe-helper/helper.conf"]
+    command: ["/bin/sh", "/etc/spiffe-helper/entrypoint.sh"]
     volumeMounts:
     - name: spiffe-socket
       mountPath: /run/spire/sockets
@@ -101,6 +119,7 @@ spec:
   - name: config
     configMap:
       name: spiffe-helper-pid-config
+      defaultMode: 0755
   - name: certs
     emptyDir: {}
 EOF
@@ -125,11 +144,14 @@ for i in {1..120}; do
     LOGS=$(kubectl logs -n "$NAMESPACE" "$TEST_POD" 2>/dev/null)
     if echo "$LOGS" | grep -q "RECEIVED_SIGUSR2_VIA_PID_FILE"; then
         echo -e "${GREEN}  ✓ Process received SIGUSR2 via PID file on certificate rotation${NC}"
+        echo -e "${CYAN}Pod logs:${NC}"
+        kubectl logs -n "$NAMESPACE" "$TEST_POD"
         exit 0
     fi
     sleep 2
 done
 
 echo -e "${RED}Error: Process did not receive signal via PID file within timeout${NC}"
+echo -e "${CYAN}Pod logs:${NC}"
 kubectl logs -n "$NAMESPACE" "$TEST_POD"
 exit 1

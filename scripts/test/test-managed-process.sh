@@ -128,11 +128,14 @@ for i in {1..120}; do
     LOGS=$(kubectl logs -n "$NAMESPACE" "$TEST_POD" 2>/dev/null)
     if echo "$LOGS" | grep -q "RECEIVED_SIGUSR1_IN_CHILD"; then
         echo -e "${GREEN}  ✓ Managed process received SIGUSR1 on certificate rotation${NC}"
+        echo -e "${CYAN}Pod logs:${NC}"
+        kubectl logs -n "$NAMESPACE" "$TEST_POD"
         exit 0
     fi
     sleep 2
 done
 
 echo -e "${RED}Error: Managed process did not receive signal within timeout${NC}"
+echo -e "${CYAN}Pod logs:${NC}"
 kubectl logs -n "$NAMESPACE" "$TEST_POD"
 exit 1
