@@ -196,7 +196,7 @@ DEBUG_DOCKERFILE := $(ROOT_DIR)/Dockerfile.debug
 .PHONY: build-helper-image
 build-helper-image:
 	@echo "$(COLOR_CYAN)[build-helper-image]$(COLOR_RESET) Building spiffe-helper container image..."
-	@docker build -t "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" .
+	@docker build -f spiffe-helper/Dockerfile -t "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" .
 	@echo "$(COLOR_GREEN)[build-helper-image]$(COLOR_RESET) Helper container image built: $(COLOR_BOLD)$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)$(COLOR_RESET)"
 
 .PHONY: load-helper-image
