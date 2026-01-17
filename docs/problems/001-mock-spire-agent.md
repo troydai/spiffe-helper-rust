@@ -21,36 +21,36 @@ are otherwise hard to reproduce through a real spire-agent.
 
 ## Execution Plan
 
-### Phase 1: Project Restructuring (Workspace)
+### Phase 1: Project Restructuring (Workspace) - [Done]
 To support the separation of the main application and the test tool, we will convert the project into a Cargo Workspace.
 
-1.  **Create Workspace**: Establish a root-level `Cargo.toml` configured as a Virtual Manifest for the workspace.
-2.  **Migrate Main App**: Move the existing `spiffe-helper-rust` code (src, existing Cargo.toml, etc.) into a subdirectory named `spiffe-helper`.
-3.  **Create Mock Crate**: Initialize a new crate `spire-mock` in a sibling directory.
-4.  **Isolate Tests**: Ensure existing integration tests (which run against the cluster) are preserved but decoupled from the default fast feedback loop.
+1.  [x] **Create Workspace**: Establish a root-level `Cargo.toml` configured as a Virtual Manifest for the workspace.
+2.  [x] **Migrate Main App**: Move the existing `spiffe-helper-rust` code (src, existing Cargo.toml, etc.) into a subdirectory named `spiffe-helper`.
+3.  [x] **Create Mock Crate**: Initialize a new crate `spire-mock` in a sibling directory.
+4.  [x] **Isolate Tests**: Ensure existing integration tests (which run against the cluster) are preserved but decoupled from the default fast feedback loop.
 
-### Phase 2: Mock Agent Implementation (`spire-mock`)
+### Phase 2: Mock Agent Implementation (`spire-mock`) - [Done]
 The mock agent will be a standalone binary that implements the SPIFFE Workload API.
 
-1.  **Dependencies**: Configure `spire-mock` with `tonic` (gRPC), `prost`, and `tokio`.
-2.  **Protocol Definition**:
+1.  [x] **Dependencies**: Configure `spire-mock` with `tonic` (gRPC), `prost`, and `tokio`.
+2.  [x] **Protocol Definition**:
     *   Fetch the official `workload.proto` from the SPIFFE repository.
     *   Configure `build.rs` to generate the server-side Rust code.
-3.  **Server Implementation**:
+3.  [x] **Server Implementation**:
     *   Implement the `SpiffeWorkloadApiService` trait.
     *   Create a gRPC server listening on a Unix Domain Socket (UDS).
-4.  **Mock Logic (Initial)**:
+4.  [x] **Mock Logic (Initial)**:
     *   **Data Source**: The mock will load pre-generated SVIDs (X.509 certificates) and Private Keys from a local directory provided via CLI arguments. This avoids complex on-the-fly CA logic for the first iteration.
     *   **Behavior**: Respond to `FetchX509SVIDRequest` with the loaded bundle.
 
-### Phase 3: Integration Testing
+### Phase 3: Integration Testing - [Done]
 Develop a fast integration test suite using the mock.
 
-1.  **Test Fixture**: Create a test harness that:
+1.  [x] **Test Fixture**: Create a test harness that:
     *   Launches `spire-mock` in the background with a specific socket path.
     *   Runs `spiffe-helper` targeting that socket.
     *   Verifies that `spiffe-helper` correctly fetches and saves the certificates.
-2.  **Cluster Tests**: Retain the `kind`-based tests but likely move them to a separate workflow or mark them (e.g., `#[ignore]`) so they are run explicitly (e.g., `cargo test -- --include-ignored` or via a dedicated script) rather than on every save.
+2.  [x] **Cluster Tests**: Retain the `kind`-based tests but likely move them to a separate workflow or mark them (e.g., `#[ignore]`) so they are run explicitly (e.g., `cargo test -- --include-ignored` or via a dedicated script) rather than on every save.
 
 ## Agent Execution Instruction
 

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::x509::X509Bundle;
+use spiffe::bundle::BundleSource;
 use spiffe::svid::x509::X509Svid;
 use spiffe::svid::SvidSource;
 use spiffe::workload_api::client::WorkloadApiClient;
@@ -34,10 +35,17 @@ pub async fn fetch_and_write_x509_svid(
     cert_dir: &Path,
     svid_file_name: &str,
     svid_key_file_name: &str,
+    svid_bundle_file_name: &str,
 ) -> Result<()> {
     let factory = X509SourceFactory::new().with_address(agent_address);
-    fetch_and_write_x509_svid_with_factory(&factory, cert_dir, svid_file_name, svid_key_file_name)
-        .await
+    fetch_and_write_x509_svid_with_factory(
+        &factory,
+        cert_dir,
+        svid_file_name,
+        svid_key_file_name,
+        svid_bundle_file_name,
+    )
+    .await
 }
 
 async fn fetch_and_write_x509_svid_with_factory(
@@ -45,6 +53,7 @@ async fn fetch_and_write_x509_svid_with_factory(
     cert_dir: &Path,
     svid_file_name: &str,
     svid_key_file_name: &str,
+    svid_bundle_file_name: &str,
 ) -> Result<()> {
     let source = factory.create().await?;
 
@@ -54,7 +63,14 @@ async fn fetch_and_write_x509_svid_with_factory(
         .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
 
+    // Get the bundle for the trust domain from the source
+    let bundle = source
+        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle from source: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("X509Source returned no bundle for trust domain"))?;
+
     write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name)?;
+    write_bundle_to_file(&bundle, cert_dir, svid_bundle_file_name)?;
 
     // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
     let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
@@ -494,9 +510,14 @@ fPfrHw1nYcPliVB4Zbv8d1w=
 
         let start = Instant::now();
         let factory = test_x509_source_factory("invalid://address");
-        let result =
-            fetch_and_write_x509_svid_with_factory(&factory, cert_dir, "svid.pem", "svid_key.pem")
-                .await;
+        let result = fetch_and_write_x509_svid_with_factory(
+            &factory,
+            cert_dir,
+            "svid.pem",
+            "svid_key.pem",
+            "bundle.pem",
+        )
+        .await;
         let duration = start.elapsed();
 
         assert!(result.is_err());
@@ -517,6 +538,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
             &cert_dir,
             "custom_cert.pem",
             "custom_key.pem",
+            "custom_bundle.pem",
         )
         .await;
 
