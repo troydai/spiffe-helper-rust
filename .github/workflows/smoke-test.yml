@@ -1,0 +1,82 @@
+name: Smoke Test (Cluster)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight
+  push:
+    branches:
+      - main
+    paths:
+      - 'spiffe-helper/**'
+      - 'deploy/**'
+      - 'scripts/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile*'
+      - 'Makefile'
+      - 'kind-config.yaml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install required tools
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Install kind
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+          # Install helm
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+
+          # Install jq
+          sudo apt-get update && sudo apt-get install -y jq
+
+          # Install openssl
+          sudo apt-get install -y openssl
+
+      - name: Verify tools
+        run: make tools
+
+      - name: Build Docker images
+        run: |
+          make build-helper-image
+          make build-debug-image
+
+      - name: Set up environment
+        run: make env-up
+
+      - name: Run smoke-test
+        run: make smoke-test
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+          echo "=== SPIRE Server Logs ==="
+          kubectl logs -n spire-server -l app=spire-server --tail=50 || true
+          echo ""
+          echo "=== SPIRE Agent Logs ==="
+          kubectl logs -n spire-agent -l app=spire-agent --tail=50 || true
+          echo ""
+          echo "=== Pod Status ==="
+          kubectl get pods -A || true
+
+      - name: Cleanup
+        if: always()
+        run: make env-down

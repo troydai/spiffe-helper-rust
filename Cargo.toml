@@ -1,33 +1,6 @@
-[package]
-name = "spiffe-helper-rust"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-name = "spiffe_helper_rust"
-path = "src/lib.rs"
-
-[[bin]]
-name = "spiffe-helper-rust"
-path = "src/main.rs"
-
-[dependencies]
-clap = { version = "4.5", features = ["derive"] }
-anyhow = "1.0"
-hcl = { package = "hcl-rs", version = "0.19" }
-serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors"] }
-spiffe = "0.4"
-pem = "1.1"
-x509-parser = "0.15"
-tonic = "0.9"
-tokio-retry = "0.3.0"
-nix = { version = "0.27", features = ["signal", "process"] }
-shell-words = "1.1"
-
-[dev-dependencies]
-tempfile = "3.8"
-
+[workspace]
+members = [
+    "spiffe-helper",
+    "spire-mock",
+]
+resolver = "2"

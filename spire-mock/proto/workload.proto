@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+// package spiffe.workload;
+
+option go_package = "github.com/spiffe/go-spiffe/v2/proto/spiffe/workload";
+option java_package = "io.spiffe.workloadapi";
+option java_outer_classname = "WorkloadProto";
+option csharp_namespace = "Spiffe.WorkloadAPI";
+
+// The Workload API is used by workloads to fetch X.509-SVIDs, JWT-SVIDs,
+// and trust bundles.
+service SpiffeWorkloadAPI {
+  // Fetches X.509-SVIDs for the workload. As the X.509-SVIDs and/or
+  // trust bundles change, subsequent messages will be streamed from the server.
+  rpc FetchX509SVID(X509SVIDRequest) returns (stream X509SVIDResponse);
+
+  // Fetches JWT-SVIDs for the workload. As the JWT-SVIDs change, subsequent
+  // messages will be streamed from the server.
+  rpc FetchJWTSVID(JWTSVIDRequest) returns (stream JWTSVIDResponse);
+
+  // Fetches JWT bundles. As the JWT bundles change, subsequent messages will
+  // be streamed from the server.
+  rpc FetchJWTBundles(JWTBundlesRequest) returns (stream JWTBundlesResponse);
+
+  // Validates a JWT-SVID.
+  rpc ValidateJWTSVID(ValidateJWTSVIDRequest) returns (ValidateJWTSVIDResponse);
+}
+
+// The X509SVIDRequest message conveys parameters for requesting an X.509-SVID.
+// There are currently no request parameters.
+message X509SVIDRequest {}
+
+// The X509SVIDResponse message conveys X.509-SVIDs and trust bundles.
+message X509SVIDResponse {
+  // A list of X.509-SVIDs and associated information.
+  repeated X509SVID svids = 1;
+
+  // A map of trust domain to X.509 bundles the workload should trust.
+  // Bundles are ASN.1 DER encoded.
+  map<string, bytes> bundles = 2;
+
+  // A map of trust domain to ASN.1 DER encoded certificate revocation lists.
+  map<string, bytes> crl_bundles = 3;
+}
+
+// The X509SVID message carries a single SVID and all associated information,
+// including the X.509 bundle for the trust domain.
+message X509SVID {
+  // Required. The SPIFFE ID of the X.509-SVID.
+  string spiffe_id = 1;
+
+  // Required. ASN.1 DER encoded X.509 certificate chain. The leaf certificate
+  // (or SVID itself) MUST come first.
+  bytes x509_svid = 2;
+
+  // Required. ASN.1 DER encoded PKCS#8 private key. MUST be unencrypted.
+  bytes x509_svid_key = 3;
+
+  // Required. ASN.1 DER encoded X.509 bundle for the trust domain.
+  bytes bundle = 4;
+
+  // Optional. The hint can be used by a workload when more than one SVID is
+  // returned. For example, a workload could use the hint to differentiate
+  // between an SVID for internal use and an SVID for external use.
+  string hint = 5;
+}
+
+// The JWTSVIDRequest message conveys parameters for requesting JWT-SVIDs.
+message JWTSVIDRequest {
+  // Required. The audience(s) the workload intends to authenticate against.
+  repeated string audience = 1;
+
+  // Optional. If present, only the JWT-SVID for the specified SPIFFE ID is
+  // returned.
+  string spiffe_id = 2;
+}
+
+// The JWTSVIDResponse message conveys JWT-SVIDs.
+message JWTSVIDResponse {
+  // Required. The list of returned JWT-SVIDs.
+  repeated JWTSVID svids = 1;
+}
+
+// The JWTSVID message carries the JWT-SVID token and associated metadata.
+message JWTSVID {
+  // Required. The SPIFFE ID of the JWT-SVID.
+  string spiffe_id = 1;
+
+  // Required. Encoded JWT using JWS Compact Serialization.
+  string svid = 2;
+
+  // Optional. The hint can be used by a workload when more than one SVID is
+  // returned. For example, a workload could use the hint to differentiate
+  // between an SVID for internal use and an SVID for external use.
+  string hint = 3;
+}
+
+// The JWTBundlesRequest message conveys parameters for requesting JWT bundles.
+// There are currently no such parameters.
+message JWTBundlesRequest {}
+
+// The JWTBundlesResponse conveys JWT bundles.
+message JWTBundlesResponse {
+  // A map of trust domain to JWT bundles the workload should trust.
+  // Bundles are JSON Web Key Sets (JWKS) documents.
+  map<string, bytes> bundles = 1;
+}
+
+// The ValidateJWTSVIDRequest message conveys parameters for validating a
+// JWT-SVID.
+message ValidateJWTSVIDRequest {
+  // Required. Encoded JWT using JWS Compact Serialization.
+  string svid = 1;
+
+  // Required. The audience the JWT-SVID was originally intended for.
+  string audience = 2;
+}
+
+// The ValidateJWTSVIDResponse message conveys the JWT-SVID validation results.
+message ValidateJWTSVIDResponse {
+  // Required. The SPIFFE ID of the validated JWT-SVID.
+  string spiffe_id = 1;
+
+  // Required. Claims contained within the payload of the validated JWT-SVID.
+  // This includes both SPIFFE-required and non-required claims.
+  bytes claims = 2;
+}

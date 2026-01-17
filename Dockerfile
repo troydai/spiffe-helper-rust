@@ -12,10 +12,11 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 
 # Copy the actual source code
-COPY src ./src
+COPY spiffe-helper ./spiffe-helper
+COPY spire-mock ./spire-mock
 
 # Build the application
-RUN cargo build --release
+RUN cargo build --release -p spiffe-helper-rust
 
 # Runtime stage
 FROM debian:bookworm-slim
