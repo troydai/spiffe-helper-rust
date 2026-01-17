@@ -4,10 +4,33 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+
 tonic = "0.9"
+
 tokio = { version = "1", features = ["full"] }
+
 anyhow = "1.0"
-spiffe = "0.4"
+
 prost = "0.11"
+
+prost-types = "0.11"
+
 tempfile = "3.8"
+
 futures-util = "0.3"
+
+tokio-stream = { version = "0.1", features = ["net"] }
+
+clap = { version = "4.4", features = ["derive", "env"] }
+
+
+
+
+
+[build-dependencies]
+
+
+
+
+
+tonic-build = "0.9"
