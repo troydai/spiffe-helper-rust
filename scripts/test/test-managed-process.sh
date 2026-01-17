@@ -81,10 +81,10 @@ spec:
   serviceAccountName: test-sa
   containers:
   - name: spiffe-helper
-    image: spiffe-helper-rust:test
+    image: spiffe-helper:test
     imagePullPolicy: Never
     args:
-    - "/usr/local/bin/spiffe-helper-rust"
+    - "/usr/local/bin/spiffe-helper"
     - "--config"
     - "/etc/spiffe-helper/helper.conf"
     volumeMounts:

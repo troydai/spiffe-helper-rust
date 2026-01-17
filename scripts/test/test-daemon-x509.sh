@@ -164,10 +164,10 @@ spec:
   serviceAccountName: test-sa
   containers:
   - name: spiffe-helper
-    image: spiffe-helper-rust:test
+    image: spiffe-helper:test
     imagePullPolicy: Never
     args:
-    - /usr/local/bin/spiffe-helper-rust
+    - /usr/local/bin/spiffe-helper
     - --config
     - /etc/spiffe-helper/helper.conf
     volumeMounts:
@@ -245,7 +245,7 @@ echo -e "${CYAN}[7/7] Verifying X509 update callback...${NC}"
 LOGS=$(kubectl logs -n "$NAMESPACE" "$TEST_POD" 2>&1 || echo "")
 
 # Check for daemon startup
-if echo "$LOGS" | grep -q "Starting spiffe-helper-rust daemon"; then
+if echo "$LOGS" | grep -q "Starting spiffe-helper daemon"; then
     echo -e "${GREEN}  ✓ Daemon mode started${NC}"
 else
     echo -e "${RED}  ✗ Daemon mode did not start${NC}"

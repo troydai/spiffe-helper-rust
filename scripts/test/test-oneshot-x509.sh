@@ -127,10 +127,10 @@ spec:
   serviceAccountName: test-sa
   initContainers:
   - name: spiffe-helper-oneshot
-    image: spiffe-helper-rust:test
+    image: spiffe-helper:test
     imagePullPolicy: Never
     args:
-    - /usr/local/bin/spiffe-helper-rust
+    - /usr/local/bin/spiffe-helper
     - --config
     - /etc/spiffe-helper/helper.conf
     - --daemon-mode
@@ -145,7 +145,7 @@ spec:
       mountPath: /tmp/certs
   containers:
   - name: sleep
-    image: spiffe-helper-rust:test
+    image: spiffe-helper:test
     imagePullPolicy: Never
     command: ["sleep", "3600"]
     volumeMounts:

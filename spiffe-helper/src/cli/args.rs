@@ -7,7 +7,7 @@ pub const DEFAULT_CONFIG_FILE: &str = "helper.conf";
 
 /// SPIFFE Helper - A utility for fetching X.509 SVID certificates from the SPIFFE Workload API
 #[derive(Parser, Debug)]
-#[command(name = "spiffe-helper-rust")]
+#[command(name = "spiffe-helper")]
 #[command(about = "SPIFFE Helper - Fetch and manage X.509 SVID certificates", long_about = None)]
 pub struct Args {
     /// Path to the configuration file

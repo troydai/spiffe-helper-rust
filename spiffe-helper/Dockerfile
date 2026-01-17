@@ -8,14 +8,15 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy dependency files first for better caching
+# Copy workspace files
 COPY Cargo.toml Cargo.lock ./
+COPY spiffe-helper/Cargo.toml ./spiffe-helper/Cargo.toml
 
 # Copy the actual source code
-COPY src ./src
+COPY spiffe-helper/src ./spiffe-helper/src
 
 # Build the application
-RUN cargo build --release
+RUN cargo build --release -p spiffe-helper
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -28,8 +29,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy the binary from builder stage
-COPY --from=builder /app/target/release/spiffe-helper-rust /usr/local/bin/spiffe-helper-rust
+COPY --from=builder /app/target/release/spiffe-helper /usr/local/bin/spiffe-helper
 
 # Use dumb-init as entrypoint for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["/usr/local/bin/spiffe-helper-rust"]
+CMD ["/usr/local/bin/spiffe-helper"]

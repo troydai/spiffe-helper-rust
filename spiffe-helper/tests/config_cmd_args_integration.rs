@@ -3,8 +3,8 @@
 //! These tests verify that `cmd_args` is correctly parsed from HCL configuration
 //! files and can be used with the process module.
 
-use spiffe_helper_rust::cli::config::parse_hcl_config;
-use spiffe_helper_rust::process::parse_cmd_args;
+use spiffe_helper::cli::config::parse_hcl_config;
+use spiffe_helper::process::parse_cmd_args;
 use std::io::Write;
 use tempfile::NamedTempFile;
 

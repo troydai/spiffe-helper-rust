@@ -1,4 +1,4 @@
-# spiffe-helper-rust
+# spiffe-helper
 
 A Rust implementation of spiffe-helper.
 
@@ -6,11 +6,11 @@ spiffe-helper fetches SPIFFE X.509 certificates and JWT tokens from the SPIRE ag
 
 ## Configuration
 
-spiffe-helper-rust uses an HCL configuration file (default: `helper.conf`) to configure its behavior.
+spiffe-helper uses an HCL configuration file (default: `helper.conf`) to configure its behavior.
 
 ### Operation Modes
 
-spiffe-helper-rust supports two operation modes controlled by the `daemon_mode` configuration option. **Daemon mode is the default** when `daemon_mode` is not specified.
+spiffe-helper supports two operation modes controlled by the `daemon_mode` configuration option. **Daemon mode is the default** when `daemon_mode` is not specified.
 
 #### Daemon Mode (`daemon_mode = true`, **default**)
 
@@ -49,9 +49,9 @@ The mode can be set in two ways:
 
 2. **Via command-line flag:**
    ```bash
-   spiffe-helper-rust --daemon-mode true --config helper.conf
+   spiffe-helper --daemon-mode true --config helper.conf
    # or
-   spiffe-helper-rust --daemon-mode false --config helper.conf
+   spiffe-helper --daemon-mode false --config helper.conf
    ```
 
    The command-line flag overrides the configuration file setting.
@@ -124,13 +124,13 @@ In daemon mode, the program responds to the following signals:
 
 ```bash
 # Using configuration file (daemon mode is the default)
-spiffe-helper-rust --config helper.conf
+spiffe-helper --config helper.conf
 
 # Explicitly enabling daemon mode via command line
-spiffe-helper-rust --config helper.conf --daemon-mode true
+spiffe-helper --config helper.conf --daemon-mode true
 
 # Running in one-shot mode (explicitly disable daemon mode)
-spiffe-helper-rust --config helper.conf --daemon-mode false
+spiffe-helper --config helper.conf --daemon-mode false
 
 # Stopping the daemon
 kill -TERM <pid>
@@ -138,7 +138,7 @@ kill -TERM <pid>
 
 ### X.509 Certificate Fetching
 
-In daemon mode, spiffe-helper-rust automatically fetches X.509 SVIDs (certificates and private keys) from the SPIRE agent at startup. The certificates are persisted to the configured output directory.
+In daemon mode, spiffe-helper automatically fetches X.509 SVIDs (certificates and private keys) from the SPIRE agent at startup. The certificates are persisted to the configured output directory.
 
 #### Configuration
 

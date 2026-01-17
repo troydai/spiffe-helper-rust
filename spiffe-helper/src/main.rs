@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use spiffe_helper_rust::{cli, daemon, oneshot};
+use spiffe_helper::{cli, daemon, oneshot};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

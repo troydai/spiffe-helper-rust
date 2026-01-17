@@ -19,7 +19,7 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 /// Runs the daemon mode: fetches initial certificate, starts health server,
 /// and waits for SIGTERM.
 pub async fn run(config: Config) -> Result<()> {
-    println!("Starting spiffe-helper-rust daemon...");
+    println!("Starting spiffe-helper daemon...");
 
     // Parse renew signal if configured
     let renew_signal = config
@@ -78,7 +78,7 @@ pub async fn run(config: Config) -> Result<()> {
                 break Ok(());
             }
             _ = liveness_interval.tick() => {
-                println!("spiffe-helper-rust daemon is alive");
+                println!("spiffe-helper daemon is alive");
             }
             // Watch for updates from X509Source
             res = update_channel.changed() => {

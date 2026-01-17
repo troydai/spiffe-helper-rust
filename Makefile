@@ -187,7 +187,7 @@ env-down: undeploy-httpbin undeploy-registration undeploy-spire-csi undeploy-spi
 	@echo "$(COLOR_BRIGHT_GREEN)[env-down]$(COLOR_RESET) $(COLOR_BOLD)Environment teardown complete!$(COLOR_RESET)"
 
 # Container image settings
-HELPER_IMAGE_NAME ?= spiffe-helper-rust
+HELPER_IMAGE_NAME ?= spiffe-helper
 HELPER_IMAGE_TAG ?= test
 DEBUG_IMAGE_NAME ?= spiffe-debug
 DEBUG_IMAGE_TAG ?= latest
@@ -195,13 +195,13 @@ DEBUG_DOCKERFILE := $(ROOT_DIR)/Dockerfile.debug
 
 .PHONY: build-helper-image
 build-helper-image:
-	@echo "$(COLOR_CYAN)[build-helper-image]$(COLOR_RESET) Building spiffe-helper-rust container image..."
-	@docker build -t "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" .
+	@echo "$(COLOR_CYAN)[build-helper-image]$(COLOR_RESET) Building spiffe-helper container image..."
+	@docker build -f spiffe-helper/Dockerfile -t "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" .
 	@echo "$(COLOR_GREEN)[build-helper-image]$(COLOR_RESET) Helper container image built: $(COLOR_BOLD)$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)$(COLOR_RESET)"
 
 .PHONY: load-helper-image
 load-helper-image: check-cluster build-helper-image
-	@echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Loading spiffe-helper-rust image into kind cluster..."
+	@echo "$(COLOR_CYAN)[load-helper-image]$(COLOR_RESET) Loading spiffe-helper image into kind cluster..."
 	@$(KIND) load docker-image "$(HELPER_IMAGE_NAME):$(HELPER_IMAGE_TAG)" --name "$(KIND_CLUSTER_NAME)"
 	@echo "$(COLOR_GREEN)[load-helper-image]$(COLOR_RESET) Helper image loaded into kind cluster"
 

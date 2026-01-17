@@ -80,7 +80,7 @@ echo $BG_PID > /tmp/my-app.pid
 echo "Written PID $BG_PID to /tmp/my-app.pid"
 
 # Start spiffe-helper in foreground
-exec /usr/local/bin/spiffe-helper-rust --config /etc/spiffe-helper/helper.conf
+exec /usr/local/bin/spiffe-helper --config /etc/spiffe-helper/helper.conf
 SCRIPT
 
 # Create ConfigMap from files
@@ -100,7 +100,7 @@ spec:
   serviceAccountName: test-sa
   containers:
   - name: spiffe-helper
-    image: spiffe-helper-rust:test
+    image: spiffe-helper:test
     imagePullPolicy: Never
     command: ["/bin/sh", "/etc/spiffe-helper/entrypoint.sh"]
     volumeMounts:
