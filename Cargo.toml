@@ -1,5 +1,5 @@
 [workspace]
 members = [
-    "spiffe-helper",
+    "spiffe-helper", "spire-agent-mock",
 ]
 resolver = "2"

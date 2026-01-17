@@ -23,7 +23,8 @@ jobs:
         with:
           filters: |
             product:
-              - 'src/**'
+              - 'spiffe-helper/**'
+              - 'spire-agent-mock/**'
               - 'deploy/**'
               - 'scripts/**'
               - 'Cargo.toml'
