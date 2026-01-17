@@ -20,10 +20,10 @@ tokio = { version = "1", features = ["full"] }
 axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
-spiffe = "0.4"
-pem = "1.1"
-x509-parser = "0.15"
-tonic = "0.9"
+spiffe = { version = "0.10.2", features = ["workload-api-full", "x509", "x509-source"] }
+pem = "3.0"
+x509-parser = "0.17"
+tonic = "0.12"
 tokio-retry = "0.3.0"
 nix = { version = "0.27", features = ["signal", "process"] }
 shell-words = "1.1"

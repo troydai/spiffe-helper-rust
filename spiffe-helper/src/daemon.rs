@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::BundleSource;
-use spiffe::svid::SvidSource;
-use spiffe::workload_api::x509_source::X509Source;
+use spiffe::X509Source;
 use std::path::Path;
+use std::process::ExitStatus;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
@@ -135,7 +135,7 @@ pub async fn run(config: Config) -> Result<()> {
                 }
             }, if child.is_some() => {
                 let status_str = match status {
-                    Ok(s) => s.to_string(),
+                    Ok(s) => (s as ExitStatus).to_string(),
                     Err(e) => format!("error: {e}"),
                 };
                 println!("Managed process exited: {status_str}");
@@ -175,12 +175,11 @@ pub async fn run(config: Config) -> Result<()> {
 
 fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
     let svid = source
-        .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
+        .svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?;
 
     let bundle = source
-        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .bundle_for_trust_domain(svid.spiffe_id().trust_domain())
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
