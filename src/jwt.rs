@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use spiffe::bundle::jwt::JwtBundleSet;
 use spiffe::workload_api::client::WorkloadApiClient;
 
-use crate::config::Config;
+use crate::cli::Config;
 
 /// Fetch JWT bundles from the Workload API
 pub async fn fetch_jwt_bundles(agent_address: &str) -> Result<JwtBundleSet> {
