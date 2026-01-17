@@ -11,9 +11,11 @@ WORKDIR /app
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY spiffe-helper/Cargo.toml ./spiffe-helper/Cargo.toml
+COPY spire-agent-mock/Cargo.toml ./spire-agent-mock/Cargo.toml
 
 # Copy the actual source code
 COPY spiffe-helper/src ./spiffe-helper/src
+COPY spire-agent-mock/src ./spire-agent-mock/src
 
 # Build the application
 RUN cargo build --release -p spiffe-helper
