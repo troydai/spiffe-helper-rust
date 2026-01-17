@@ -31,13 +31,19 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint (clippy)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: |
+          cargo clippy -p spiffe-helper-rust --all-targets --all-features -- -D warnings
+          cargo clippy -p spire-mock --all-targets --all-features -- -D warnings
 
       - name: Build
-        run: cargo build --all-targets
+        run: |
+          cargo build -p spiffe-helper-rust --all-targets
+          cargo build -p spire-mock --all-targets
 
       - name: Test
-        run: cargo test --all-targets
+        run: |
+          cargo test -p spiffe-helper-rust --all-targets
+          cargo test -p spire-mock --all-targets
 
       - name: Set up Docker Buildx
         if: hashFiles('Dockerfile') != ''
@@ -85,8 +91,8 @@ jobs:
       - name: Generate code coverage
         id: coverage
         run: |
-          # Generate coverage and capture summary output
-          cargo llvm-cov --all-features --workspace --summary-only > coverage_summary.txt 2>&1
+          # Generate coverage for each package and capture summary output
+          cargo llvm-cov --all-features -p spiffe-helper-rust -p spire-mock --summary-only > coverage_summary.txt 2>&1
           cat coverage_summary.txt
 
       - name: Extract coverage metrics
