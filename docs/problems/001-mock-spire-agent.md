@@ -2,22 +2,22 @@
 
 ## Problem Statement
 
-The integration test is done through a complete set up of SPIRE server and
-agent in a local kind cluster. This set up is a good representation of the
+The integration test is done through a complete setup of SPIRE server and
+agent in a local kind cluster. This setup is a good representation of the
 production environment.
 
-Creation of this environment is, however, slow. The turn around time of
-creating cluster, load images, waiting for server and agent to start takes
-minutes if not tens of minutes. When running this set up locally and CI/CD
-leads to prolong turn around time and slow down the development velocity.
+Creation of this environment is, however, slow. The turnaround time of
+creating cluster, loading images, waiting for server and agent to start takes
+minutes if not tens of minutes. When running this setup locally and CI/CD
+leads to prolonged turnaround time and slows down the development velocity.
 
 ## Solution
 
 The spiffe-helper-rust relies on spire-agent's workload API to function.
-The API implement can be mocked by implement a spire-agent that function
-with given instruction without a server. This mock agent can be run locally
-outside of a cluster. Additionally this agent can perform failure mode that
-nevertheless hard to reproduce through a real spire-agent.
+The API implementation can be mocked by implementing a spire-agent that functions
+with given instructions without a server. This mock agent can be run locally
+outside of a cluster. Additionally this agent can simulate failure modes that
+are otherwise hard to reproduce through a real spire-agent.
 
 ## Execution Plan
 
@@ -51,3 +51,21 @@ Develop a fast integration test suite using the mock.
     *   Runs `spiffe-helper` targeting that socket.
     *   Verifies that `spiffe-helper` correctly fetches and saves the certificates.
 2.  **Cluster Tests**: Retain the `kind`-based tests but likely move them to a separate workflow or mark them (e.g., `#[ignore]`) so they are run explicitly (e.g., `cargo test -- --include-ignored` or via a dedicated script) rather than on every save.
+
+## Agent Execution Instruction
+
+This section is for AI coding agents that execute this plan. Agents that execute this plan have different roles: orchestrator and worker.
+
+For orchestrator:
+- Read the entire plan and memorize its end goal;
+- Launch worker agent to execute the plan sequentially;
+- Feed instruction to worker and verify their work;
+- Communicate with worker to understand its progress;
+- Once a worker is done its job, mark the task down in this document and launch a new worker to start next job.
+- It is important to record the progress in this file and commit through git, this allows another orchestrator agent to pick up the remaining work when necessary.
+
+For worker:
+- Read the entire plan but focus on the task that is assigned to you by the orchestrator;
+- Work only for that task nothing else;
+- Code and test the work;
+- Commit the work in git and create PR waiting for review;
