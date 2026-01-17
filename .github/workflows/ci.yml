@@ -91,7 +91,7 @@ jobs:
       - name: Generate code coverage
         id: coverage
         run: |
-          # Generate coverage for each package and capture summary output
+          # Generate coverage and capture summary output
           cargo llvm-cov --all-features -p spiffe-helper-rust -p spire-mock --summary-only > coverage_summary.txt 2>&1
           cat coverage_summary.txt
 
