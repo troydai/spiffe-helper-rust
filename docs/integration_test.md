@@ -1,6 +1,6 @@
 # Integration Test Documentation
 
-This document describes how to set up and use the integration test environment for spiffe-helper-rust. The integration test environment uses a local kind cluster with SPIRE server and agents deployed.
+This document describes how to set up and use the integration test environment for spiffe-helper. The integration test environment uses a local kind cluster with SPIRE server and agents deployed.
 
 ## Prerequisites
 
@@ -279,21 +279,21 @@ make load-images
 ```
 
 This target loads:
-- **Helper image** (`spiffe-helper-rust:test`) - The main spiffe-helper-rust binary image
+- **Helper image** (`spiffe-helper:test`) - The main spiffe-helper binary image
 - **Debug image** (`spiffe-debug:latest`) - A debug container image with useful tools
 
 The `load-images` target is automatically included in `make env-up`, so you typically don't need to run it manually unless you've rebuilt images.
 
 ### Load Helper Image (`make load-helper-image`)
 
-Loads the spiffe-helper-rust image into the kind cluster:
+Loads the spiffe-helper image into the kind cluster:
 
 ```bash
 make load-helper-image
 ```
 
 This target:
-- Builds the `spiffe-helper-rust:test` image using `make build-helper-image`
+- Builds the `spiffe-helper:test` image using `make build-helper-image`
 - Loads it into the kind cluster using `kind load docker-image`
 
 **Note**: This target ensures the latest code is always built and loaded.
@@ -599,7 +599,7 @@ The system registers the following sample workloads:
 | `smoke-test` | Validate SPIRE environment health | `check-cluster` |
 | `list-entries` | List all registered SPIRE workload entries | `check-cluster` |
 | `load-images` | Load all container images into kind cluster | `check-cluster` |
-| `load-helper-image` | Load spiffe-helper-rust image into kind cluster | `check-cluster` |
+| `load-helper-image` | Load spiffe-helper image into kind cluster | `check-cluster` |
 | `load-debug-image` | Load or build debug container image | `check-cluster` |
 | `build-debug-image` | Build debug container image | None |
 | `env-up` | Complete environment setup | `tools`, `certs`, `cluster-up`, `deploy-spire-server`, `deploy-spire-agent`, `deploy-registration`, `load-images` |

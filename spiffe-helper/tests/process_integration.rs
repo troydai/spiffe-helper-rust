@@ -3,7 +3,7 @@
 //! These tests verify that the `cmd_args` parsing integrates correctly with
 //! process spawning, testing the full flow from configuration to execution.
 
-use spiffe_helper_rust::process::parse_cmd_args;
+use spiffe_helper::process::parse_cmd_args;
 use std::process::Command;
 use tempfile::tempdir;
 

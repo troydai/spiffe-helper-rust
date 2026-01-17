@@ -1,4 +1,4 @@
-# spiffe-helper-rust Implementation Plan
+# spiffe-helper Implementation Plan
 
 This document tracks the progress of reimplementing [spiffe-helper](https://github.com/spiffe/spiffe-helper) in Rust with 100% feature parity.
 
