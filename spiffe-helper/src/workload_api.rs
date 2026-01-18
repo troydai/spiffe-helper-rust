@@ -29,7 +29,9 @@ async fn fetch_and_write_x509_svid_with_factory(
     svid_key_file_name: &str,
 ) -> Result<()> {
     let source = factory.create().await?;
-    let svid = source.svid().map_err(|e| anyhow::anyhow!("SVID error: {}", e))?;
+    let svid = source
+        .svid()
+        .map_err(|e| anyhow::anyhow!("SVID error: {}", e))?;
     write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name)?;
     Ok(())
 }
@@ -52,7 +54,10 @@ fn write_svid_to_files(
         .join("\n");
 
     fs::write(&cert_path, cert_pem)?;
-    let key_pem = pem::encode(&pem::Pem::new("PRIVATE KEY", svid.private_key().as_ref().to_vec()));
+    let key_pem = pem::encode(&pem::Pem::new(
+        "PRIVATE KEY",
+        svid.private_key().as_ref().to_vec(),
+    ));
     fs::write(&key_path, key_pem)?;
     Ok(())
 }
@@ -79,9 +84,17 @@ pub fn write_x509_svid_on_update(
     bundle: &X509Bundle,
     config: &Config,
 ) -> Result<()> {
-    let cert_dir = config.cert_dir.as_ref().ok_or_else(|| anyhow::anyhow!("cert_dir missing"))?;
+    let cert_dir = config
+        .cert_dir
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("cert_dir missing"))?;
     let cert_dir_path = Path::new(cert_dir);
-    write_svid_to_files(svid, cert_dir_path, config.svid_file_name(), config.svid_key_file_name())?;
+    write_svid_to_files(
+        svid,
+        cert_dir_path,
+        config.svid_file_name(),
+        config.svid_key_file_name(),
+    )?;
     write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name())?;
     Ok(())
 }
@@ -100,7 +113,10 @@ impl Default for X509SourceFactory {
 impl X509SourceFactory {
     pub fn new() -> Self {
         let retry_strategy = ExponentialBackoff::from_millis(1000).take(10);
-        Self { retry_strategy, address: String::new() }
+        Self {
+            retry_strategy,
+            address: String::new(),
+        }
     }
 
     pub async fn create(&self) -> Result<Arc<X509Source>> {
