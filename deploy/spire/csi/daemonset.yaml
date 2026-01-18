@@ -1,80 +1,80 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: spire-csi-driver
-  namespace: spire-agent
-  labels:
-    app: spire-csi-driver
-spec:
-  selector:
-    matchLabels:
-      app: spire-csi-driver
-  template:
-    metadata:
-      labels:
+    name: spire-csi-driver
+    namespace: spire-agent
+    labels:
         app: spire-csi-driver
-    spec:
-      serviceAccountName: spire-csi-driver
-      containers:
-        - name: spire-csi-driver
-          image: ghcr.io/spiffe/spiffe-csi-driver:0.2.3
-          imagePullPolicy: IfNotPresent
-          args:
-            - -workload-api-socket-dir
-            - /spire-agent-socket
-            - -csi-socket-path
-            - /spiffe-csi/csi.sock
-          env:
-            - name: MY_NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-          volumeMounts:
-            - name: spire-agent-socket-dir
-              mountPath: /spire-agent-socket
-              readOnly: true
-            - name: spire-csi-socket-dir
-              mountPath: /spiffe-csi
-            - name: mountpoint-dir
-              mountPath: /var/lib/kubelet/pods
-              mountPropagation: Bidirectional
-          securityContext:
-            privileged: true
-        - name: node-driver-registrar
-          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.6.2
-          imagePullPolicy: IfNotPresent
-          args:
-            - -csi-address
-            - /spiffe-csi/csi.sock
-            - -kubelet-registration-path
-            - /var/lib/kubelet/plugins/csi.spiffe.io/csi.sock
-          volumeMounts:
-            - name: spire-csi-socket-dir
-              mountPath: /spiffe-csi
-            - name: kubelet-plugin-registration-dir
-              mountPath: /registration
-      volumes:
-        - name: spire-agent-socket-dir
-          hostPath:
-            path: /run/spire/sockets
-            type: DirectoryOrCreate
-        - name: spire-csi-socket-dir
-          hostPath:
-            path: /var/lib/kubelet/plugins/csi.spiffe.io
-            type: DirectoryOrCreate
-        - name: mountpoint-dir
-          hostPath:
-            path: /var/lib/kubelet/pods
-            type: Directory
-        - name: kubelet-plugin-registration-dir
-          hostPath:
-            path: /var/lib/kubelet/plugins_registry
-            type: Directory
-      tolerations:
-        # Allow running on control-plane nodes
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+spec:
+    selector:
+        matchLabels:
+            app: spire-csi-driver
+    template:
+        metadata:
+            labels:
+                app: spire-csi-driver
+        spec:
+            serviceAccountName: spire-csi-driver
+            containers:
+                - name: spire-csi-driver
+                  image: ghcr.io/spiffe/spiffe-csi-driver:0.2.3
+                  imagePullPolicy: IfNotPresent
+                  args:
+                      - -workload-api-socket-dir
+                      - /spire-agent-socket
+                      - -csi-socket-path
+                      - /spiffe-csi/csi.sock
+                  env:
+                      - name: MY_NODE_NAME
+                        valueFrom:
+                            fieldRef:
+                                fieldPath: spec.nodeName
+                  volumeMounts:
+                      - name: spire-agent-socket-dir
+                        mountPath: /spire-agent-socket
+                        readOnly: true
+                      - name: spire-csi-socket-dir
+                        mountPath: /spiffe-csi
+                      - name: mountpoint-dir
+                        mountPath: /var/lib/kubelet/pods
+                        mountPropagation: Bidirectional
+                  securityContext:
+                      privileged: true
+                - name: node-driver-registrar
+                  image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.6.2
+                  imagePullPolicy: IfNotPresent
+                  args:
+                      - -csi-address
+                      - /spiffe-csi/csi.sock
+                      - -kubelet-registration-path
+                      - /var/lib/kubelet/plugins/csi.spiffe.io/csi.sock
+                  volumeMounts:
+                      - name: spire-csi-socket-dir
+                        mountPath: /spiffe-csi
+                      - name: kubelet-plugin-registration-dir
+                        mountPath: /registration
+            volumes:
+                - name: spire-agent-socket-dir
+                  hostPath:
+                      path: /run/spire/sockets
+                      type: DirectoryOrCreate
+                - name: spire-csi-socket-dir
+                  hostPath:
+                      path: /var/lib/kubelet/plugins/csi.spiffe.io
+                      type: DirectoryOrCreate
+                - name: mountpoint-dir
+                  hostPath:
+                      path: /var/lib/kubelet/pods
+                      type: Directory
+                - name: kubelet-plugin-registration-dir
+                  hostPath:
+                      path: /var/lib/kubelet/plugins_registry
+                      type: Directory
+            tolerations:
+                # Allow running on control-plane nodes
+                - key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+                  effect: NoSchedule
+                - key: node-role.kubernetes.io/master
+                  operator: Exists
+                  effect: NoSchedule

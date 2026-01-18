@@ -1,39 +1,38 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: spire-agent-config
-  namespace: spire-agent
-  labels:
-    app: spire-agent
+    name: spire-agent-config
+    namespace: spire-agent
+    labels:
+        app: spire-agent
 data:
-  agent.conf: |
-    agent {
-      data_dir = "/run/spire"
-      log_level = "DEBUG"
-      trust_domain = "spiffe-helper.local"
-      server_address = "spire-server.spire-server.svc.cluster.local"
-      server_port = 8081
-      socket_path = "/run/spire/sockets/agent.sock"
-      trust_bundle_path = "/run/spire/bundle/bundle.pem"
-    }
-
-    plugins {
-      NodeAttestor "k8s_psat" {
-        plugin_data {
-          cluster = "spiffe-helper"
+    agent.conf: |
+        agent {
+          data_dir = "/run/spire"
+          log_level = "DEBUG"
+          trust_domain = "spiffe-helper.local"
+          server_address = "spire-server.spire-server.svc.cluster.local"
+          server_port = 8081
+          socket_path = "/run/spire/sockets/agent.sock"
+          trust_bundle_path = "/run/spire/bundle/bundle.pem"
         }
-      }
 
-      KeyManager "disk" {
-        plugin_data {
-          directory = "/run/spire/data"
+        plugins {
+          NodeAttestor "k8s_psat" {
+            plugin_data {
+              cluster = "spiffe-helper"
+            }
+          }
+
+          KeyManager "disk" {
+            plugin_data {
+              directory = "/run/spire/data"
+            }
+          }
+
+          WorkloadAttestor "k8s" {
+            plugin_data {
+              skip_kubelet_verification = true
+            }
+          }
         }
-      }
-
-      WorkloadAttestor "k8s" {
-        plugin_data {
-          skip_kubelet_verification = true
-        }
-      }
-    }
-
