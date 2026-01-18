@@ -16,7 +16,7 @@ use crate::cli::Config;
 /// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
 /// * `cert_dir` - Directory where certificates should be written
 /// * `svid_file_name` - Optional filename for the certificate (default: "svid.pem")
-/// * `svid_key_file_name` - Optional filename for the private key (default: "`svid_key.pem`")
+/// * `svid_key_file_name` - Optional filename for the private key (default: "svid_key.pem")
 ///
 /// # Returns
 ///

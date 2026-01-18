@@ -46,6 +46,7 @@ spec:
                 - name: spiffe-helper
                   image: spiffe-helper:test
                   imagePullPolicy: IfNotPresent
+                  restartPolicy: Always
                   command:
                       - /usr/local/bin/spiffe-helper
                       - --config
