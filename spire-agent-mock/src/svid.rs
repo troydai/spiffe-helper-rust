@@ -102,8 +102,9 @@ impl SvidGenerator {
         dn.push(DnType::OrganizationName, &self.config.trust_domain);
         params.distinguished_name = dn;
 
-        // Leaf certificate (not a CA)
-        params.is_ca = IsCa::NoCa;
+        // Leaf certificate (not a CA) - use ExplicitNoCa to ensure Basic Constraints
+        // extension is included (required by SPIFFE spec)
+        params.is_ca = IsCa::ExplicitNoCa;
         params.key_usages = vec![
             KeyUsagePurpose::DigitalSignature,
             KeyUsagePurpose::KeyEncipherment,
@@ -129,9 +130,13 @@ impl SvidGenerator {
             .signed_by(&key_pair, &self.ca_cert, &self.ca_key_pair)
             .unwrap();
 
+        // Certificate chain: leaf cert followed by CA cert (concatenated DER)
+        let mut cert_chain = cert.der().to_vec();
+        cert_chain.extend_from_slice(&self.ca_cert_der);
+
         X509Svid {
             spiffe_id,
-            cert_chain_der: cert.der().to_vec(),
+            cert_chain_der: cert_chain,
             private_key_der: key_pair.serialize_der(),
             bundle_der: self.ca_cert_der.clone(),
         }
@@ -152,6 +157,30 @@ mod tests {
         assert!(!svid.cert_chain_der.is_empty());
         assert!(!svid.private_key_der.is_empty());
         assert!(!svid.bundle_der.is_empty());
+    }
+
+    #[test]
+    fn test_svid_can_be_parsed_by_spiffe_crate() {
+        let config = SvidConfig::default();
+        let generator = SvidGenerator::new(config);
+        let svid = generator.generate_svid();
+
+        // Try to parse with spiffe crate - this is what the client does
+        let result = spiffe::svid::x509::X509Svid::parse_from_der(
+            &svid.cert_chain_der,
+            &svid.private_key_der,
+        );
+
+        match &result {
+            Ok(parsed) => {
+                println!("Parsed SPIFFE ID: {}", parsed.spiffe_id());
+            }
+            Err(e) => {
+                println!("Parse error: {:?}", e);
+            }
+        }
+
+        assert!(result.is_ok(), "Failed to parse SVID: {:?}", result.err());
     }
 
     #[test]
