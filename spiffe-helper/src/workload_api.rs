@@ -228,7 +228,7 @@ XzjpK0rIywC6cdaqYMDcIUyqNCO2l2FvccN7flo2pnppj6w55kv+FTX0C+AUv3qC
 p2OFoxDKsFWk52J0qXR/QefV5fFnrOLgqI2zCbyxSr7EZzGW9Fbr+YrpzXfI8Z0b
 8GGRaPE6WbPGjvc97Uwmp3T+4UkJatFnaAHnTsRikdbZ1F0xNcvE13pltbG3vFk0
 lQluKI5/n4db
------END CERTIFICATE-----    ";
+-----END CERTIFICATE-----";
 
     const TEST_KEY_PEM: &str = r"-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDWfSLWEw9Kgfsn
@@ -257,7 +257,7 @@ adLDLFi/w1FVUI9Jg+St+uKT00xvMqoocuI9U0ECgYEAzlapqhd+CXpy7KQKNtRt
 A/lJGE6bkB2JNXbr01DthVr5JSDPz39AxTRB9VeRUt5irB8f7OvmS7fy6+FY9Jxn
 QBAx6pG1tAXOEZt4R56+FIKBFcHJFB0ja/RQDRDLCZl+KFUDfgRNvomZx1lWBicI
 fPfrHw1nYcPliVB4Zbv8d1w=
------END PRIVATE KEY-----    ";
+-----END PRIVATE KEY-----";
 
     fn get_test_svid() -> X509Svid {
         let cert_der = pem::parse(TEST_CERT_PEM).unwrap().contents;
