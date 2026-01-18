@@ -1,27 +1,19 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::x509::X509Bundle;
 use spiffe::svid::x509::X509Svid;
-use spiffe::svid::SvidSource;
-use spiffe::workload_api::client::WorkloadApiClient;
-use spiffe::workload_api::x509_source::{X509Source, X509SourceBuilder};
+use spiffe::{X509Source, X509SourceBuilder};
 use std::fs;
-use std::iter::Take;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio_retry::strategy::ExponentialBackoff;
-use tokio_retry::RetryIf;
 
 use crate::cli::Config;
-
-const UDS_PREFIX: &str = "unix://";
 
 /// Fetches X.509 SVID (certificate and key) from the SPIRE agent
 /// and writes them to the specified directory.
 ///
 /// # Arguments
 ///
-/// * `agent_address` - The address of the SPIRE agent (e.g., "<unix:///tmp/agent.sock>")
+/// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
 /// * `cert_dir` - Directory where certificates should be written
 /// * `svid_file_name` - Optional filename for the certificate (default: "svid.pem")
 /// * `svid_key_file_name` - Optional filename for the private key (default: "`svid_key.pem`")
@@ -35,24 +27,19 @@ pub async fn fetch_and_write_x509_svid(
     svid_file_name: &str,
     svid_key_file_name: &str,
 ) -> Result<()> {
-    let factory = X509SourceFactory::new().with_address(agent_address);
-    fetch_and_write_x509_svid_with_factory(&factory, cert_dir, svid_file_name, svid_key_file_name)
+    let endpoint = normalize_endpoint(agent_address);
+    let source = X509SourceBuilder::new()
+        .endpoint(&endpoint)
+        .reconnect_backoff(Duration::from_secs(1), Duration::from_secs(16))
+        .build()
         .await
-}
-
-async fn fetch_and_write_x509_svid_with_factory(
-    factory: &X509SourceFactory,
-    cert_dir: &Path,
-    svid_file_name: &str,
-    svid_key_file_name: &str,
-) -> Result<()> {
-    let source = factory.create().await?;
+        .context("Failed to create X509Source from SPIRE agent")?;
 
     // Get the SVID from the source
-    let svid: X509Svid = source
-        .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("X509Source returned no SVID (None)"))?;
+    let svid: X509Svid = (*source
+        .svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?)
+    .clone();
 
     write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name)?;
 
@@ -192,149 +179,25 @@ pub fn write_x509_svid_on_update(
     Ok(())
 }
 
-pub struct X509SourceFactory {
-    retry_strategy: Take<ExponentialBackoff>,
-    address: String,
-}
-
-impl Default for X509SourceFactory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl X509SourceFactory {
-    #[must_use]
-    pub fn new() -> Self {
-        let retry_strategy = ExponentialBackoff::from_millis(1000)
-            .max_delay(Duration::from_secs(16))
-            .take(10);
-
-        Self {
-            retry_strategy,
-            address: String::new(),
-        }
-    }
-
-    pub async fn create(&self) -> Result<Arc<X509Source>> {
-        if self.address.is_empty() {
-            return Err(anyhow::anyhow!("address must be configured"));
-        }
-
-        let address = self.address.clone();
-        let mut attempt = 0u32;
-
-        RetryIf::spawn(
-            self.retry_strategy.clone(),
-            || {
-                let addr = address.clone();
-                attempt += 1;
-                async move {
-                    if attempt > 1 {
-                        eprintln!(
-                            "Retry attempt {attempt} to create X509Source (address={addr})"
-                        );
-                    }
-                    let client = create_workload_api_client(&addr).await?;
-                    X509SourceBuilder::new()
-                        .with_client(client)
-                        .build()
-                        .await
-                        .context("Failed to build X509Source")
-                }
-            },
-            |err: &anyhow::Error| {
-                let retryable = is_retryable_error(err);
-                if !retryable {
-                    let error_category = categorize_error(err);
-                    eprintln!(
-                        "Non-retryable error during X509Source creation: category={error_category}, error={err:?}"
-                    );
-                }
-                retryable
-            },
-        )
-        .await
-        .map_err(|e| {
-            let error_category = categorize_error(&e);
-            anyhow::anyhow!(
-                "Failed to create X509Source from SPIRE agent after {attempt} attempts: category={error_category}, error={e}"
-            )
-        })
-    }
-
-    #[must_use]
-    pub fn with_retry(mut self, strategy: Take<ExponentialBackoff>) -> Self {
-        self.retry_strategy = strategy;
-        self
-    }
-
-    #[must_use]
-    pub fn with_address(mut self, address: &str) -> Self {
-        self.address = address.to_string();
-        self
-    }
-}
-
-async fn create_workload_api_client(address: &str) -> Result<WorkloadApiClient> {
-    let address = address
+/// Normalizes the agent address to a format accepted by the spiffe crate.
+/// Converts "unix:///path" to "unix:/path" (single slash after scheme).
+fn normalize_endpoint(address: &str) -> String {
+    const UDS_PREFIX: &str = "unix://";
+    address
         .strip_prefix(UDS_PREFIX)
-        .map_or_else(|| String::from(address), |v| format!("unix:{v}"));
+        .map_or_else(|| address.to_string(), |v| format!("unix:{v}"))
+}
 
-    WorkloadApiClient::new_from_path(&address)
+/// Creates an X509Source connected to the specified agent address.
+/// This is the primary interface for creating X509Source instances with proper configuration.
+pub async fn create_x509_source(agent_address: &str) -> Result<X509Source> {
+    let endpoint = normalize_endpoint(agent_address);
+    X509SourceBuilder::new()
+        .endpoint(&endpoint)
+        .reconnect_backoff(Duration::from_secs(1), Duration::from_secs(16))
+        .build()
         .await
-        .with_context(|| format!("Failed to create WorkloadApiClient from address: {address}"))
-}
-
-fn is_retryable_error(err: &anyhow::Error) -> bool {
-    let error_str = format!("{err:?}");
-    // Retry when SPIRE agent is not yet ready to serve:
-    // - Socket file doesn't exist yet (NotFound, "No such file or directory")
-    // - Socket exists but not accepting connections (ConnectionRefused, "Connection refused")
-    // - Permission issues during workload attestation (PermissionDenied)
-    error_str.contains("PermissionDenied")
-        || error_str.contains("ConnectionRefused")
-        || error_str.contains("Connection refused")
-        || error_str.contains("NotFound")
-        || error_str.contains("No such file or directory")
-}
-
-/// Categorizes an error into a human-readable category for diagnostic purposes.
-/// This helps operators quickly identify whether an error is related to configuration,
-/// network connectivity, or other issues.
-fn categorize_error(err: &anyhow::Error) -> &'static str {
-    let error_str = format!("{err:?}");
-
-    // Network/connectivity errors (retryable)
-    if error_str.contains("ConnectionRefused") || error_str.contains("Connection refused") {
-        return "network/connection_refused";
-    }
-    if error_str.contains("NotFound") || error_str.contains("No such file or directory") {
-        return "network/socket_not_found";
-    }
-    if error_str.contains("PermissionDenied") {
-        return "network/permission_denied";
-    }
-
-    // gRPC/protocol errors
-    if error_str.contains("tonic") || error_str.contains("grpc") || error_str.contains("h2") {
-        return "grpc/protocol_error";
-    }
-
-    // Configuration errors
-    if error_str.contains("InvalidUri")
-        || error_str.contains("invalid")
-        || error_str.contains("Invalid")
-    {
-        return "config/invalid_address";
-    }
-
-    // SPIFFE-specific errors
-    if error_str.contains("SVID") || error_str.contains("spiffe") {
-        return "spiffe/svid_error";
-    }
-
-    "unknown"
+        .context("Failed to create X509Source from SPIRE agent")
 }
 
 #[cfg(test)]
@@ -344,7 +207,6 @@ mod tests {
     use spiffe::spiffe_id::TrustDomain;
     use spiffe::svid::x509::X509Svid;
     use std::fs;
-    use std::time::Instant;
     use tempfile::TempDir;
 
     const TEST_CERT_PEM: &str = r"-----BEGIN CERTIFICATE-----
@@ -410,186 +272,22 @@ fPfrHw1nYcPliVB4Zbv8d1w=
     }
 
     #[test]
-    fn test_is_retryable_error() {
-        let err = anyhow::anyhow!("Some PermissionDenied error");
-        assert!(is_retryable_error(&err));
-
-        let err = anyhow::anyhow!("NotFound: file not found");
-        assert!(is_retryable_error(&err));
-
-        let err = anyhow::anyhow!("ConnectionRefused: refused");
-        assert!(is_retryable_error(&err));
-
-        let err = anyhow::anyhow!("No such file or directory");
-        assert!(is_retryable_error(&err));
-
-        let err = anyhow::anyhow!("Connection refused");
-        assert!(is_retryable_error(&err));
-
-        let err = anyhow::anyhow!("Some other error");
-        assert!(!is_retryable_error(&err));
+    fn test_normalize_endpoint_with_triple_slash() {
+        let result = normalize_endpoint("unix:///tmp/test.sock");
+        assert_eq!(result, "unix:/tmp/test.sock");
     }
 
     #[test]
-    fn test_categorize_error_network_errors() {
-        let err = anyhow::anyhow!("ConnectionRefused: refused");
-        assert_eq!(categorize_error(&err), "network/connection_refused");
-
-        let err = anyhow::anyhow!("Connection refused by server");
-        assert_eq!(categorize_error(&err), "network/connection_refused");
-
-        let err = anyhow::anyhow!("NotFound: socket not found");
-        assert_eq!(categorize_error(&err), "network/socket_not_found");
-
-        let err = anyhow::anyhow!("No such file or directory");
-        assert_eq!(categorize_error(&err), "network/socket_not_found");
-
-        let err = anyhow::anyhow!("PermissionDenied: access denied");
-        assert_eq!(categorize_error(&err), "network/permission_denied");
+    fn test_normalize_endpoint_without_prefix() {
+        let result = normalize_endpoint("unix:/tmp/test.sock");
+        assert_eq!(result, "unix:/tmp/test.sock");
     }
 
     #[test]
-    fn test_categorize_error_grpc_errors() {
-        let err = anyhow::anyhow!("tonic error: transport error");
-        assert_eq!(categorize_error(&err), "grpc/protocol_error");
-
-        let err = anyhow::anyhow!("grpc status code: unavailable");
-        assert_eq!(categorize_error(&err), "grpc/protocol_error");
-
-        let err = anyhow::anyhow!("h2 protocol error");
-        assert_eq!(categorize_error(&err), "grpc/protocol_error");
-    }
-
-    #[test]
-    fn test_categorize_error_config_errors() {
-        let err = anyhow::anyhow!("InvalidUri: bad uri format");
-        assert_eq!(categorize_error(&err), "config/invalid_address");
-
-        let err = anyhow::anyhow!("invalid address format");
-        assert_eq!(categorize_error(&err), "config/invalid_address");
-
-        let err = anyhow::anyhow!("Invalid socket path");
-        assert_eq!(categorize_error(&err), "config/invalid_address");
-    }
-
-    #[test]
-    fn test_categorize_error_spiffe_errors() {
-        let err = anyhow::anyhow!("SVID parsing failed");
-        assert_eq!(categorize_error(&err), "spiffe/svid_error");
-
-        let err = anyhow::anyhow!("spiffe error occurred");
-        assert_eq!(categorize_error(&err), "spiffe/svid_error");
-    }
-
-    #[test]
-    fn test_categorize_error_unknown() {
-        let err = anyhow::anyhow!("Some completely unexpected error");
-        assert_eq!(categorize_error(&err), "unknown");
-    }
-
-    #[tokio::test]
-    async fn test_fetch_and_write_x509_svid_fail_fast() {
-        let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path();
-
-        let start = Instant::now();
-        let factory = test_x509_source_factory("invalid://address");
-        let result =
-            fetch_and_write_x509_svid_with_factory(&factory, cert_dir, "svid.pem", "svid_key.pem")
-                .await;
-        let duration = start.elapsed();
-
-        assert!(result.is_err());
-        assert!(
-            duration < Duration::from_millis(500),
-            "Should fail fast on non-retryable error, took {duration:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_fetch_and_write_x509_svid_custom_file_names() {
-        let temp_dir = TempDir::new().unwrap();
-        let cert_dir = temp_dir.path().join("nested_certs");
-
-        let factory = test_x509_source_factory("unix:///tmp/nonexistent-socket.sock");
-        let result = fetch_and_write_x509_svid_with_factory(
-            &factory,
-            &cert_dir,
-            "custom_cert.pem",
-            "custom_key.pem",
-        )
-        .await;
-
-        assert!(result.is_err());
-        assert!(!cert_dir.exists());
-    }
-
-    fn test_x509_source_factory(address: &str) -> X509SourceFactory {
-        X509SourceFactory::new()
-            .with_address(address)
-            .with_retry(ExponentialBackoff::from_millis(10).take(3))
-    }
-
-    #[tokio::test]
-    async fn test_x509_source_factory_empty_address() {
-        let factory = X509SourceFactory::new();
-        let result = factory.create().await;
-
-        match result {
-            Ok(_) => panic!("Expected error for empty address"),
-            Err(e) => {
-                let error_msg = e.to_string();
-                assert!(error_msg.contains("address must be configured"));
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_x509_source_factory_whitespace_address() {
-        let factory = X509SourceFactory::new().with_address("   ");
-        let result = factory.create().await;
-
-        match result {
-            Ok(_) => panic!("Expected error for whitespace address"),
-            Err(e) => {
-                let error_msg = e.to_string();
-                assert!(!error_msg.contains("address must be configured"));
-            }
-        }
-    }
-
-    #[test]
-    fn test_x509_source_factory_builder_methods() {
-        let strategy = ExponentialBackoff::from_millis(100).take(1);
-        let factory = X509SourceFactory::new()
-            .with_address("unix:///tmp/test.sock")
-            .with_retry(strategy);
-
-        assert_eq!(factory.address, "unix:///tmp/test.sock");
-    }
-
-    #[tokio::test]
-    async fn test_create_workload_api_client_unix_prefix_conversion() {
-        let result = create_workload_api_client("unix:///tmp/test-socket.sock").await;
-        match result {
-            Ok(_) => panic!("Expected error"),
-            Err(e) => assert!(e.to_string().contains("Failed to create WorkloadApiClient")),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_create_workload_api_client_without_prefix() {
-        let result = create_workload_api_client("unix:/tmp/test-socket.sock").await;
-        match result {
-            Ok(_) => panic!("Expected error"),
-            Err(e) => assert!(e.to_string().contains("Failed to create WorkloadApiClient")),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_create_workload_api_client_invalid_address() {
-        let result = create_workload_api_client("invalid://address").await;
-        assert!(result.is_err());
+    fn test_normalize_endpoint_tcp() {
+        let result = normalize_endpoint("tcp://127.0.0.1:8080");
+        // TCP addresses should be passed through unchanged
+        assert_eq!(result, "tcp://127.0.0.1:8080");
     }
 
     #[test]
