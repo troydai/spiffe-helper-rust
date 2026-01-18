@@ -1,135 +1,135 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: httpbin
+    name: httpbin
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: httpbin
-  namespace: httpbin
+    name: httpbin
+    namespace: httpbin
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: spiffe-helper-config
-  namespace: httpbin
+    name: spiffe-helper-config
+    namespace: httpbin
 data:
-  helper.conf: |
-    agent_address = "unix:///run/spire/sockets/agent.sock"
-    daemon_mode = true
-    cert_dir = "/tmp/certs"
-    health_checks {
-      listener_enabled = true
-      bind_port = 8080
-      liveness_path = "/live"
-      readiness_path = "/ready"
-    }
+    helper.conf: |
+        agent_address = "unix:///run/spire/sockets/agent.sock"
+        daemon_mode = true
+        cert_dir = "/tmp/certs"
+        health_checks {
+          listener_enabled = true
+          bind_port = 8080
+          liveness_path = "/live"
+          readiness_path = "/ready"
+        }
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: httpbin
-  namespace: httpbin
+    name: httpbin
+    namespace: httpbin
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: httpbin
-  template:
-    metadata:
-      labels:
-        app: httpbin
-    spec:
-      serviceAccountName: httpbin
-      initContainers:
-      - name: spiffe-helper
-        image: spiffe-helper:test
-        imagePullPolicy: IfNotPresent
-        command:
-        - /usr/local/bin/spiffe-helper
-        - --config
-        - /etc/spiffe-helper/helper.conf
-        ports:
-        - containerPort: 8080
-          name: health
-        livenessProbe:
-          httpGet:
-            path: /live
-            port: health
-          initialDelaySeconds: 5
-          periodSeconds: 5
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: health
-          initialDelaySeconds: 5
-          periodSeconds: 5
-        volumeMounts:
-        - name: spiffe-socket
-          mountPath: /run/spire/sockets
-          readOnly: true
-        - name: config
-          mountPath: /etc/spiffe-helper
-        - name: certs
-          mountPath: /tmp/certs
-      containers:
-      - name: httpbin
-        image: kennethreitz/httpbin:latest
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 80
-          name: http
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
-        volumeMounts:
-        - name: certs
-          mountPath: /tmp/certs
-          readOnly: true
-      - name: spiffe-debug
-        image: spiffe-debug:latest
-        imagePullPolicy: Never
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
-        volumeMounts:
-        - name: spiffe-socket
-          mountPath: /run/spire/sockets
-          readOnly: true
-        - name: certs
-          mountPath: /tmp/certs
-          readOnly: true
-      volumes:
-      - name: spiffe-socket
-        csi:
-          driver: "csi.spiffe.io"
-          readOnly: true
-      - name: config
-        configMap:
-          name: spiffe-helper-config
-      - name: certs
-        emptyDir: {}
+    replicas: 1
+    selector:
+        matchLabels:
+            app: httpbin
+    template:
+        metadata:
+            labels:
+                app: httpbin
+        spec:
+            serviceAccountName: httpbin
+            initContainers:
+                - name: spiffe-helper
+                  image: spiffe-helper:test
+                  imagePullPolicy: IfNotPresent
+                  command:
+                      - /usr/local/bin/spiffe-helper
+                      - --config
+                      - /etc/spiffe-helper/helper.conf
+                  ports:
+                      - containerPort: 8080
+                        name: health
+                  livenessProbe:
+                      httpGet:
+                          path: /live
+                          port: health
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+                  readinessProbe:
+                      httpGet:
+                          path: /ready
+                          port: health
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+                  volumeMounts:
+                      - name: spiffe-socket
+                        mountPath: /run/spire/sockets
+                        readOnly: true
+                      - name: config
+                        mountPath: /etc/spiffe-helper
+                      - name: certs
+                        mountPath: /tmp/certs
+            containers:
+                - name: httpbin
+                  image: kennethreitz/httpbin:latest
+                  imagePullPolicy: IfNotPresent
+                  ports:
+                      - containerPort: 80
+                        name: http
+                  resources:
+                      requests:
+                          memory: "64Mi"
+                          cpu: "50m"
+                      limits:
+                          memory: "128Mi"
+                          cpu: "100m"
+                  volumeMounts:
+                      - name: certs
+                        mountPath: /tmp/certs
+                        readOnly: true
+                - name: spiffe-debug
+                  image: spiffe-debug:latest
+                  imagePullPolicy: Never
+                  resources:
+                      requests:
+                          memory: "64Mi"
+                          cpu: "50m"
+                      limits:
+                          memory: "128Mi"
+                          cpu: "100m"
+                  volumeMounts:
+                      - name: spiffe-socket
+                        mountPath: /run/spire/sockets
+                        readOnly: true
+                      - name: certs
+                        mountPath: /tmp/certs
+                        readOnly: true
+            volumes:
+                - name: spiffe-socket
+                  csi:
+                      driver: "csi.spiffe.io"
+                      readOnly: true
+                - name: config
+                  configMap:
+                      name: spiffe-helper-config
+                - name: certs
+                  emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: httpbin
-  namespace: httpbin
+    name: httpbin
+    namespace: httpbin
 spec:
-  selector:
-    app: httpbin
-  ports:
-  - port: 80
-    targetPort: 80
-    protocol: TCP
-    name: http
-  type: ClusterIP
+    selector:
+        app: httpbin
+    ports:
+        - port: 80
+          targetPort: 80
+          protocol: TCP
+          name: http
+    type: ClusterIP
