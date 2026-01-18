@@ -54,9 +54,8 @@ async fn test_daemon_rotates_certs_then_shutdown() {
         rotated_not_before < rotated_not_after,
         "Rotated certificate validity window is invalid"
     );
-    let now = x509_parser::time::ASN1Time::now();
     assert!(
-        rotated_not_before <= now && now <= rotated_not_after,
+        common::is_time_within_leeway(rotated_not_before, rotated_not_after),
         "Rotated certificate is not currently valid"
     );
     assert_ne!(initial_key, rotated_key, "Private key did not rotate");

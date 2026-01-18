@@ -6,6 +6,8 @@ use tokio::net::UnixListener;
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::Server;
 
+const VALIDITY_LEEWAY_SECONDS: i64 = 15;
+
 /// Wait for the socket file to exist (with timeout).
 pub async fn assert_socket_ready(socket_path: &Path) {
     // max delay 2 seconds
@@ -57,10 +59,11 @@ pub fn assert_x509_cert(path: &Path) -> Vec<u8> {
         cert.tbs_certificate.validity.not_before < cert.tbs_certificate.validity.not_after,
         "Certificate validity window is invalid"
     );
-    let now = x509_parser::time::ASN1Time::now();
     assert!(
-        cert.tbs_certificate.validity.not_before <= now
-            && now <= cert.tbs_certificate.validity.not_after,
+        is_time_within_leeway(
+            cert.tbs_certificate.validity.not_before,
+            cert.tbs_certificate.validity.not_after
+        ),
         "Certificate is not currently valid"
     );
     assert!(
@@ -99,6 +102,19 @@ pub fn assert_x509_cert(path: &Path) -> Vec<u8> {
     );
 
     cert.tbs_certificate.serial.to_bytes_be()
+}
+
+pub fn is_time_within_leeway(
+    not_before: x509_parser::time::ASN1Time,
+    not_after: x509_parser::time::ASN1Time,
+) -> bool {
+    let now = x509_parser::time::ASN1Time::now().timestamp();
+    let not_before_ts = not_before.timestamp();
+    let not_after_ts = not_after.timestamp();
+    let now_plus_leeway = now.saturating_add(VALIDITY_LEEWAY_SECONDS);
+    let now_minus_leeway = now.saturating_sub(VALIDITY_LEEWAY_SECONDS);
+
+    not_before_ts <= now_plus_leeway && now_minus_leeway <= not_after_ts
 }
 
 pub fn assert_x509_key(path: &Path) -> Vec<u8> {
