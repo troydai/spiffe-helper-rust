@@ -1,4 +1,5 @@
 mod server;
+mod svid;
 
 use anyhow::Result;
 use clap::Parser;
