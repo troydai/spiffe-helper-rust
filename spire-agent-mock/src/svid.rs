@@ -20,7 +20,7 @@ pub struct X509Svid {
 pub struct SvidConfig {
     pub trust_domain: String,
     pub workload_path: String,
-    pub ttl_seconds: i64,
+    pub ttl_seconds: u32,
 }
 
 impl Default for SvidConfig {
@@ -117,7 +117,7 @@ impl SvidGenerator {
         // Set validity period based on TTL
         let now = OffsetDateTime::now_utc();
         params.not_before = now;
-        params.not_after = now + Duration::seconds(self.config.ttl_seconds);
+        params.not_after = now + Duration::seconds(self.config.ttl_seconds.into());
 
         // SPIFFE ID as URI SAN - this is required by SPIFFE spec
         params.subject_alt_names = vec![SanType::URI(spiffe_id.parse().unwrap())];
