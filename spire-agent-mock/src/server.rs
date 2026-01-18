@@ -25,11 +25,21 @@ pub struct MockWorkloadApi {
 
 impl MockWorkloadApi {
     pub fn new() -> Self {
-        Self::with_config(SvidConfig::default())
+        let default_interval = Duration::from_secs(SvidConfig::default().ttl_seconds as u64);
+        Self::with_config_and_rotation(SvidConfig::default(), default_interval)
     }
 
+    #[allow(dead_code)]
     pub fn with_config(config: SvidConfig) -> Self {
         let rotation_interval = Duration::from_secs(config.ttl_seconds as u64);
+        Self::with_config_and_rotation(config, rotation_interval)
+    }
+
+    pub fn with_rotation_interval(rotation_interval: Duration) -> Self {
+        Self::with_config_and_rotation(SvidConfig::default(), rotation_interval)
+    }
+
+    pub fn with_config_and_rotation(config: SvidConfig, rotation_interval: Duration) -> Self {
         Self {
             svid_generator: Arc::new(SvidGenerator::new(config)),
             rotation_interval,
