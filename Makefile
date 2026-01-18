@@ -19,7 +19,7 @@ clean:
 	@echo "[clean] Removing generated artifacts..."
 	@rm -rf $(ARTIFACTS_DIR)
 	@if [ -d "$(ROOT_DIR)/bin" ]; then \
-		echo "[clean] Removing binaries..." \
+		echo "[clean] Removing binaries..."; \
 		rm -rf "$(ROOT_DIR)/bin"; \
 	fi
 	@echo "[clean] Clean complete."
@@ -31,27 +31,27 @@ cluster-up: $(KIND_CONFIG)
 .PHONY: cluster-down
 cluster-down:
 	@if kind get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
-		echo "[cluster-down] Deleting kind cluster '$(KIND_CLUSTER_NAME)'" \
+		echo "[cluster-down] Deleting kind cluster '$(KIND_CLUSTER_NAME)'"; \
 		kind delete cluster --name "$(KIND_CLUSTER_NAME)"; \
 	else \
-		echo "[cluster-down] kind cluster '$(KIND_CLUSTER_NAME)' already absent" \
+		echo "[cluster-down] kind cluster '$(KIND_CLUSTER_NAME)' already absent"; \
 	fi
 	@rm -f "$(KUBECONFIG_PATH)"
-	@if [ -d "$(ARTIFACTS_DIR)" ] && [ -z "$$($(KUBECTL) ls -A "$(ARTIFACTS_DIR)")" ]; then rmdir "$(ARTIFACTS_DIR)"; fi
+	@if [ -d "$(ARTIFACTS_DIR)" ] && [ -z "$$(ls -A "$(ARTIFACTS_DIR)" 2>/dev/null)" ]; then rmdir "$(ARTIFACTS_DIR)"; fi
 
 # Check if cluster exists and kubeconfig is valid
 .PHONY: check-cluster
 check-cluster:
 	@if ! kind get clusters | grep -qx "$(KIND_CLUSTER_NAME)"; then \
-		echo "[check-cluster] Error: kind cluster '$(KIND_CLUSTER_NAME)' does not exist. Run 'make cluster-up' first." \
+		echo "[check-cluster] Error: kind cluster '$(KIND_CLUSTER_NAME)' does not exist. Run 'make cluster-up' first."; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(KUBECONFIG_PATH)" ]; then \
-		echo "[check-cluster] Error: kubeconfig not found at $(KUBECONFIG_PATH). Run 'make cluster-up' first." \
+		echo "[check-cluster] Error: kubeconfig not found at $(KUBECONFIG_PATH). Run 'make cluster-up' first."; \
 		exit 1; \
 	fi
 	@if ! $(KUBECTL) cluster-info > /dev/null 2>&1; then \
-		echo "[check-cluster] Error: unable to connect to cluster. Run 'make cluster-up' first." \
+		echo "[check-cluster] Error: unable to connect to cluster. Run 'make cluster-up' first."; \
 		exit 1; \
 	fi
 
@@ -59,17 +59,17 @@ check-cluster:
 .PHONY: check-certs
 check-certs:
 	@if [ ! -f "$(CERT_DIR)/ca-cert.pem" ] || [ ! -f "$(CERT_DIR)/ca-key.pem" ]; then \
-		echo "[check-certs] Error: CA certificate files not found. Expected: $(CERT_DIR)/ca-cert.pem, $(CERT_DIR)/ca-key.pem" \
+		echo "[check-certs] Error: CA certificate files not found. Expected: $(CERT_DIR)/ca-cert.pem, $(CERT_DIR)/ca-key.pem"; \
 		echo "[check-certs] Run 'make certs' first."; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(CERT_DIR)/spire-server-cert.pem" ] || [ ! -f "$(CERT_DIR)/spire-server-key.pem" ]; then \
-		echo "[check-certs] Error: SPIRE server certificate files not found. Expected: $(CERT_DIR)/spire-server-cert.pem, $(CERT_DIR)/spire-server-key.pem" \
+		echo "[check-certs] Error: SPIRE server certificate files not found. Expected: $(CERT_DIR)/spire-server-cert.pem, $(CERT_DIR)/spire-server-key.pem"; \
 		echo "[check-certs] Run 'make certs' first."; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(CERT_DIR)/bootstrap-bundle.pem" ]; then \
-		echo "[check-certs] Error: Bootstrap bundle not found. Expected: $(CERT_DIR)/bootstrap-bundle.pem" \
+		echo "[check-certs] Error: Bootstrap bundle not found. Expected: $(CERT_DIR)/bootstrap-bundle.pem"; \
 		echo "[check-certs] Run 'make certs' first."; \
 		exit 1; \
 	fi
