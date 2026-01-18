@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["full"] }
 axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
-spiffe = "0.4"
+spiffe = { version = "0.10.2", features = ["workload-api-full", "x509", "x509-source", "transport-grpc"] }
 pem = "1.1"
 x509-parser = "0.15"
 tonic = "0.9"

@@ -1,9 +1,7 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::BundleSource;
-use spiffe::svid::SvidSource;
-use spiffe::workload_api::x509_source::X509Source;
+use spiffe::X509Source;
 use std::path::Path;
-use std::sync::Arc;
 use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
@@ -30,10 +28,7 @@ pub async fn run(config: Config) -> Result<()> {
         .context("Failed to parse renew_signal")?;
 
     // Create X509Source (this waits for the first update)
-    let source = workload_api::X509SourceFactory::new()
-        .with_address(config.agent_address()?)
-        .create()
-        .await?;
+    let source = workload_api::create_x509_source(config.agent_address()?).await?;
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write
@@ -173,14 +168,13 @@ pub async fn run(config: Config) -> Result<()> {
     result
 }
 
-fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+fn fetch_and_process_update(source: &X509Source, config: &Config) -> Result<()> {
     let svid = source
-        .get_svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("No SVID received"))?;
+        .svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?;
 
     let bundle = source
-        .get_bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .bundle_for_trust_domain(svid.spiffe_id().trust_domain())
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
