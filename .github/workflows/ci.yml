@@ -1,315 +1,318 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
 
 env:
-  CARGO_TERM_COLOR: always
+    CARGO_TERM_COLOR: always
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      product: ${{ steps.filter.outputs.product }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            product:
-              - 'spiffe-helper/**'
-              - 'spire-agent-mock/**'
-              - 'deploy/**'
-              - 'scripts/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'Dockerfile*'
-              - 'Makefile'
-              - 'kind-config.yaml'
-              - '.github/workflows/ci.yml'
+    changes:
+        runs-on: ubuntu-latest
+        outputs:
+            product: ${{ steps.filter.outputs.product }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dorny/paths-filter@v3
+              id: filter
+              with:
+                  filters: |
+                      product:
+                        - 'spiffe-helper/**'
+                        - 'spire-agent-mock/**'
+                        - 'deploy/**'
+                        - 'scripts/**'
+                        - 'Cargo.toml'
+                        - 'Cargo.lock'
+                        - 'Dockerfile*'
+                        - 'Makefile'
+                        - 'kind-config.yaml'
+                        - '.github/workflows/ci.yml'
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+            - name: Install protobuf compiler
+              run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Cache cargo artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Lint (fmt)
-        run: cargo fmt --all --check
+            - name: Lint (fmt)
+              run: cargo fmt --all --check
 
-      - name: Lint (clippy)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+            - name: Lint (clippy)
+              run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Build
-        run: cargo build --all-targets
+            - name: Build
+              run: cargo build --all-targets
 
-      - name: Test
-        run: cargo test --all-targets
+            - name: Test
+              run: cargo test --all-targets
 
-      - name: Set up Docker Buildx
-        if: hashFiles('Dockerfile') != ''
-        uses: docker/setup-buildx-action@v3
+            - name: Set up Docker Buildx
+              if: hashFiles('Dockerfile') != ''
+              uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
-        if: hashFiles('Dockerfile') != ''
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: spiffe-helper-rust:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          # Build multi-arch only on main branch to save CI time
-          # PRs validate with amd64 only for faster feedback
-          platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
+            - name: Build Docker image
+              if: hashFiles('Dockerfile') != ''
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  push: false
+                  tags: spiffe-helper-rust:ci
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+                  # Build multi-arch only on main branch to save CI time
+                  # PRs validate with amd64 only for faster feedback
+                  platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64,linux/arm/v7' || 'linux/amd64' }}
 
-  smoke-test:
-    needs: changes
-    if: |
-      needs.changes.outputs.product == 'true' &&
-      !contains(github.event.pull_request.title, 'skip-smoke')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    smoke-test:
+        needs: changes
+        if: |
+            needs.changes.outputs.product == 'true' &&
+            !contains(github.event.pull_request.title, 'skip-smoke')
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install required tools
-        run: |
-          # Install kubectl
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
+            - name: Install required tools
+              run: |
+                  # Install kubectl
+                  curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                  chmod +x kubectl
+                  sudo mv kubectl /usr/local/bin/
 
-          # Install kind
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+                  # Install kind
+                  curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
+                  chmod +x ./kind
+                  sudo mv ./kind /usr/local/bin/kind
 
-          # Install helm
-          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-          chmod 700 get_helm.sh
-          ./get_helm.sh
+                  # Install helm
+                  curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+                  chmod 700 get_helm.sh
+                  ./get_helm.sh
 
-          # Install jq
-          sudo apt-get update && sudo apt-get install -y jq
+                  # Install jq
+                  sudo apt-get update && sudo apt-get install -y jq
 
-          # Install openssl
-          sudo apt-get install -y openssl
+                  # Install openssl
+                  sudo apt-get install -y openssl
 
-          # Verify installations
-          kubectl version --client
-          kind version
-          jq --version
-          openssl version
+                  # Verify installations
+                  kubectl version --client
+                  kind version
+                  jq --version
+                  openssl version
 
-      - name: Verify tools
-        run: make tools
+            - name: Verify tools
+              run: make tools
 
-      # Explicitly build images to ensure they are ready and to make the CI flow clear.
-      # The smoke-test job is self-contained and does not depend on the 'build' job artifacts.
-      - name: Build Docker images
-        run: |
-          make build-helper-image
-          make build-debug-image
+            # Explicitly build images to ensure they are ready and to make the CI flow clear.
+            # The smoke-test job is self-contained and does not depend on the 'build' job artifacts.
+            - name: Build Docker images
+              run: |
+                  make build-helper-image
+                  make build-debug-image
 
-      - name: Set up environment
-        run: make env-up
+            - name: Set up environment
+              run: make env-up
 
-      - name: Run smoke-test
-        run: make smoke-test
+            - name: Run smoke-test
+              run: make smoke-test
 
-      - name: Collect logs on failure
-        if: failure()
-        run: |
-          export KUBECONFIG=$(pwd)/artifacts/kubeconfig
-          echo "=== SPIRE Server Logs ==="
-          kubectl logs -n spire-server -l app=spire-server --tail=50 || true
-          echo ""
-          echo "=== SPIRE Agent Logs ==="
-          kubectl logs -n spire-agent -l app=spire-agent --tail=50 || true
-          echo ""
-          echo "=== Pod Status ==="
-          kubectl get pods -A || true
+            - name: Collect logs on failure
+              if: failure()
+              run: |
+                  export KUBECONFIG=$(pwd)/artifacts/kubeconfig
+                  echo "=== SPIRE Server Logs ==="
+                  kubectl logs -n spire-server -l app=spire-server --tail=50 || true
+                  echo ""
+                  echo "=== SPIRE Agent Logs ==="
+                  kubectl logs -n spire-agent -l app=spire-agent --tail=50 || true
+                  echo ""
+                  echo "=== Pod Status ==="
+                  kubectl get pods -A || true
 
-      - name: Cleanup
-        if: always()
-        run: make env-down
+            - name: Cleanup
+              if: always()
+              run: make env-down
 
-  coverage:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Install jq and bc
-        run: sudo apt-get update && sudo apt-get install -y jq bc
-
-      - name: Generate code coverage
-        id: coverage
-        run: |
-          # Generate coverage and capture summary output
-          cargo llvm-cov --all-features --workspace --summary-only > coverage_summary.txt 2>&1
-          cat coverage_summary.txt
-
-      - name: Extract coverage metrics
-        id: extract
-        run: |
-          # Parse the table format output from cargo-llvm-cov
-          # Format: TOTAL line contains: Regions Missed Cover% Functions Missed Executed% Lines Missed Cover%
-          if [ -f coverage_summary.txt ]; then
-            # Extract the TOTAL line
-            TOTAL_LINE=$(grep "^TOTAL" coverage_summary.txt || echo "")
-            
-            if [ -n "$TOTAL_LINE" ]; then
-              # Parse the TOTAL line - it's space-separated columns
-              # Columns: TOTAL, Regions, Missed Regions, Cover%, Functions, Missed Functions, Executed%, Lines, Missed Lines, Cover%, Branches, Missed Branches, Cover%
-              # We want: Overall coverage (Regions Cover%), Lines total/covered, Functions total/covered
-              
-              # Extract overall coverage percentage (Regions Cover column - 4th field)
-              COVERAGE=$(echo "$TOTAL_LINE" | awk '{print $4}' | sed 's/%//' || echo "0")
-              
-              # Extract lines: total (8th field) and missed (9th field)
-              LINES_TOTAL=$(echo "$TOTAL_LINE" | awk '{print $8}' || echo "0")
-              LINES_MISSED=$(echo "$TOTAL_LINE" | awk '{print $9}' || echo "0")
-              LINES_COVERED=$((LINES_TOTAL - LINES_MISSED))
-              
-              # Extract functions: total (5th field) and missed (6th field)
-              FUNCTIONS_TOTAL=$(echo "$TOTAL_LINE" | awk '{print $5}' || echo "0")
-              FUNCTIONS_MISSED=$(echo "$TOTAL_LINE" | awk '{print $6}' || echo "0")
-              FUNCTIONS_COVERED=$((FUNCTIONS_TOTAL - FUNCTIONS_MISSED))
-              
-              # Set defaults if empty or invalid
-              COVERAGE=${COVERAGE:-0}
-              LINES_COVERED=${LINES_COVERED:-0}
-              LINES_TOTAL=${LINES_TOTAL:-0}
-              FUNCTIONS_COVERED=${FUNCTIONS_COVERED:-0}
-              FUNCTIONS_TOTAL=${FUNCTIONS_TOTAL:-0}
-            else
-              echo "Warning: Could not find TOTAL line in coverage output"
-              COVERAGE=0
-              LINES_COVERED=0
-              LINES_TOTAL=0
-              FUNCTIONS_COVERED=0
-              FUNCTIONS_TOTAL=0
-            fi
-            
-            echo "Extracted values:"
-            echo "  Coverage: $COVERAGE%"
-            echo "  Lines: $LINES_COVERED/$LINES_TOTAL"
-            echo "  Functions: $FUNCTIONS_COVERED/$FUNCTIONS_TOTAL"
-            
-            echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
-            echo "lines_covered=${LINES_COVERED}" >> $GITHUB_OUTPUT
-            echo "lines_total=${LINES_TOTAL}" >> $GITHUB_OUTPUT
-            echo "functions_covered=${FUNCTIONS_COVERED}" >> $GITHUB_OUTPUT
-            echo "functions_total=${FUNCTIONS_TOTAL}" >> $GITHUB_OUTPUT
-          else
-            echo "Warning: coverage_summary.txt not found, using defaults"
-            echo "coverage=0" >> $GITHUB_OUTPUT
-            echo "lines_covered=0" >> $GITHUB_OUTPUT
-            echo "lines_total=0" >> $GITHUB_OUTPUT
-            echo "functions_covered=0" >> $GITHUB_OUTPUT
-            echo "functions_total=0" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Post coverage comment to PR
+    coverage:
+        runs-on: ubuntu-latest
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              console.log('Extracting coverage metrics...');
-              const coverage = parseFloat('${{ steps.extract.outputs.coverage }}') || 0;
-              const linesCovered = parseInt('${{ steps.extract.outputs.lines_covered }}') || 0;
-              const linesTotal = parseInt('${{ steps.extract.outputs.lines_total }}') || 0;
-              const functionsCovered = parseInt('${{ steps.extract.outputs.functions_covered }}') || 0;
-              const functionsTotal = parseInt('${{ steps.extract.outputs.functions_total }}') || 0;
-              
-              console.log(`Coverage: ${coverage}%, Lines: ${linesCovered}/${linesTotal}, Functions: ${functionsCovered}/${functionsTotal}`);
-              
-              const coveragePercent = isNaN(coverage) ? '0.00' : coverage.toFixed(2);
-              const linesPercent = linesTotal > 0 ? ((linesCovered / linesTotal) * 100).toFixed(2) : '0.00';
-              const functionsPercent = functionsTotal > 0 ? ((functionsCovered / functionsTotal) * 100).toFixed(2) : '0.00';
-              
-              const comment = `## 📊 Code Coverage Report
-              
-              | Metric | Coverage |
-              |--------|----------|
-              | **Overall** | **${coveragePercent}%** |
-              | Lines | ${linesCovered}/${linesTotal} (${linesPercent}%) |
-              | Functions | ${functionsCovered}/${functionsTotal} (${functionsPercent}%) |
-              
-              _Generated by [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)_`;
-              
-              console.log('Fetching existing comments...');
-              // Find existing coverage comment
-              const comments = await github.rest.issues.listComments({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-              });
-              
-              const coverageComment = comments.data.find(comment => 
-                comment.user.type === 'Bot' && 
-                comment.body.includes('Code Coverage Report')
-              );
-              
-              if (coverageComment) {
-                console.log(`Updating existing comment ${coverageComment.id}...`);
-                // Update existing comment
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: coverageComment.id,
-                  body: comment,
-                });
-                console.log('Comment updated successfully');
-              } else {
-                console.log('Creating new comment...');
-                // Create new comment
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body: comment,
-                });
-                console.log('Comment created successfully');
-              }
-            } catch (error) {
-              console.error('Error posting coverage comment:', error);
-              console.error('Error stack:', error.stack);
-              // Don't fail the job if comment posting fails
-            }
+        permissions:
+            contents: read
+            issues: write
+            pull-requests: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Install protobuf compiler
+              run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+            - name: Cache cargo artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Install cargo-llvm-cov
+              uses: taiki-e/install-action@cargo-llvm-cov
+
+            - name: Install jq and bc
+              run: sudo apt-get update && sudo apt-get install -y jq bc
+
+            - name: Generate code coverage
+              id: coverage
+              run: |
+                  # Generate coverage and capture summary output
+                  if ! cargo llvm-cov --all-features --workspace --summary-only > coverage_summary.txt 2>&1; then
+                    echo "cargo llvm-cov failed; output:"
+                    cat coverage_summary.txt || true
+                    exit 1
+                  fi
+                  cat coverage_summary.txt
+
+            - name: Extract coverage metrics
+              id: extract
+              run: |
+                  # Parse the table format output from cargo-llvm-cov
+                  # Format: TOTAL line contains: Regions Missed Cover% Functions Missed Executed% Lines Missed Cover%
+                  if [ -f coverage_summary.txt ]; then
+                    # Extract the TOTAL line
+                    TOTAL_LINE=$(grep "^TOTAL" coverage_summary.txt || echo "")
+
+                    if [ -n "$TOTAL_LINE" ]; then
+                      # Parse the TOTAL line - it's space-separated columns
+                      # Columns: TOTAL, Regions, Missed Regions, Cover%, Functions, Missed Functions, Executed%, Lines, Missed Lines, Cover%, Branches, Missed Branches, Cover%
+                      # We want: Overall coverage (Regions Cover%), Lines total/covered, Functions total/covered
+
+                      # Extract overall coverage percentage (Regions Cover column - 4th field)
+                      COVERAGE=$(echo "$TOTAL_LINE" | awk '{print $4}' | sed 's/%//' || echo "0")
+
+                      # Extract lines: total (8th field) and missed (9th field)
+                      LINES_TOTAL=$(echo "$TOTAL_LINE" | awk '{print $8}' || echo "0")
+                      LINES_MISSED=$(echo "$TOTAL_LINE" | awk '{print $9}' || echo "0")
+                      LINES_COVERED=$((LINES_TOTAL - LINES_MISSED))
+
+                      # Extract functions: total (5th field) and missed (6th field)
+                      FUNCTIONS_TOTAL=$(echo "$TOTAL_LINE" | awk '{print $5}' || echo "0")
+                      FUNCTIONS_MISSED=$(echo "$TOTAL_LINE" | awk '{print $6}' || echo "0")
+                      FUNCTIONS_COVERED=$((FUNCTIONS_TOTAL - FUNCTIONS_MISSED))
+
+                      # Set defaults if empty or invalid
+                      COVERAGE=${COVERAGE:-0}
+                      LINES_COVERED=${LINES_COVERED:-0}
+                      LINES_TOTAL=${LINES_TOTAL:-0}
+                      FUNCTIONS_COVERED=${FUNCTIONS_COVERED:-0}
+                      FUNCTIONS_TOTAL=${FUNCTIONS_TOTAL:-0}
+                    else
+                      echo "Warning: Could not find TOTAL line in coverage output"
+                      COVERAGE=0
+                      LINES_COVERED=0
+                      LINES_TOTAL=0
+                      FUNCTIONS_COVERED=0
+                      FUNCTIONS_TOTAL=0
+                    fi
+
+                    echo "Extracted values:"
+                    echo "  Coverage: $COVERAGE%"
+                    echo "  Lines: $LINES_COVERED/$LINES_TOTAL"
+                    echo "  Functions: $FUNCTIONS_COVERED/$FUNCTIONS_TOTAL"
+
+                    echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
+                    echo "lines_covered=${LINES_COVERED}" >> $GITHUB_OUTPUT
+                    echo "lines_total=${LINES_TOTAL}" >> $GITHUB_OUTPUT
+                    echo "functions_covered=${FUNCTIONS_COVERED}" >> $GITHUB_OUTPUT
+                    echo "functions_total=${FUNCTIONS_TOTAL}" >> $GITHUB_OUTPUT
+                  else
+                    echo "Warning: coverage_summary.txt not found, using defaults"
+                    echo "coverage=0" >> $GITHUB_OUTPUT
+                    echo "lines_covered=0" >> $GITHUB_OUTPUT
+                    echo "lines_total=0" >> $GITHUB_OUTPUT
+                    echo "functions_covered=0" >> $GITHUB_OUTPUT
+                    echo "functions_total=0" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Post coverage comment to PR
+              if: github.event_name == 'pull_request'
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      try {
+                        console.log('Extracting coverage metrics...');
+                        const coverage = parseFloat('${{ steps.extract.outputs.coverage }}') || 0;
+                        const linesCovered = parseInt('${{ steps.extract.outputs.lines_covered }}') || 0;
+                        const linesTotal = parseInt('${{ steps.extract.outputs.lines_total }}') || 0;
+                        const functionsCovered = parseInt('${{ steps.extract.outputs.functions_covered }}') || 0;
+                        const functionsTotal = parseInt('${{ steps.extract.outputs.functions_total }}') || 0;
+
+                        console.log(`Coverage: ${coverage}%, Lines: ${linesCovered}/${linesTotal}, Functions: ${functionsCovered}/${functionsTotal}`);
+
+                        const coveragePercent = isNaN(coverage) ? '0.00' : coverage.toFixed(2);
+                        const linesPercent = linesTotal > 0 ? ((linesCovered / linesTotal) * 100).toFixed(2) : '0.00';
+                        const functionsPercent = functionsTotal > 0 ? ((functionsCovered / functionsTotal) * 100).toFixed(2) : '0.00';
+
+                        const comment = `## 📊 Code Coverage Report
+
+                        | Metric | Coverage |
+                        |--------|----------|
+                        | **Overall** | **${coveragePercent}%** |
+                        | Lines | ${linesCovered}/${linesTotal} (${linesPercent}%) |
+                        | Functions | ${functionsCovered}/${functionsTotal} (${functionsPercent}%) |
+
+                        _Generated by [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)_`;
+
+                        console.log('Fetching existing comments...');
+                        // Find existing coverage comment
+                        const comments = await github.rest.issues.listComments({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                        });
+
+                        const coverageComment = comments.data.find(comment =>
+                          comment.user.type === 'Bot' &&
+                          comment.body.includes('Code Coverage Report')
+                        );
+
+                        if (coverageComment) {
+                          console.log(`Updating existing comment ${coverageComment.id}...`);
+                          // Update existing comment
+                          await github.rest.issues.updateComment({
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
+                            comment_id: coverageComment.id,
+                            body: comment,
+                          });
+                          console.log('Comment updated successfully');
+                        } else {
+                          console.log('Creating new comment...');
+                          // Create new comment
+                          await github.rest.issues.createComment({
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
+                            issue_number: context.issue.number,
+                            body: comment,
+                          });
+                          console.log('Comment created successfully');
+                        }
+                      } catch (error) {
+                        console.error('Error posting coverage comment:', error);
+                        console.error('Error stack:', error.stack);
+                        // Don't fail the job if comment posting fails
+                      }
