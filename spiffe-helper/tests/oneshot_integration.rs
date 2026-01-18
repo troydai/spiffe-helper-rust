@@ -73,136 +73,136 @@ async fn test_oneshot_mode_fetches_and_writes_certificates() {
     server_handle.abort();
 }
 
-// /// Test that one-shot mode works with custom file names
-// #[tokio::test]
-// async fn test_oneshot_mode_with_custom_file_names() {
-//     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-//     let socket_path = temp_dir.path().join("agent.sock");
-//     let cert_dir = temp_dir.path().join("certs");
+/// Test that one-shot mode works with custom file names
+#[tokio::test]
+async fn test_oneshot_mode_with_custom_file_names() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let socket_path = temp_dir.path().join("agent.sock");
+    let cert_dir = temp_dir.path().join("certs");
 
-//     let socket_path_clone = socket_path.clone();
-//     let server_handle = tokio::spawn(async move {
-//         start_mock_agent(&socket_path_clone).await;
-//     });
+    let socket_path_clone = socket_path.clone();
+    let server_handle = tokio::spawn(async move {
+        start_mock_agent(&socket_path_clone).await;
+    });
 
-//     wait_for_socket(&socket_path).await;
+    wait_for_socket(&socket_path).await;
 
-//     let config = Config {
-//         agent_address: Some(format!("unix://{}", socket_path.display())),
-//         cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
-//         daemon_mode: Some(false),
-//         svid_file_name: Some("custom_cert.pem".to_string()),
-//         svid_key_file_name: Some("custom_key.pem".to_string()),
-//         ..Default::default()
-//     };
+    let config = Config {
+        agent_address: Some(format!("unix://{}", socket_path.display())),
+        cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+        daemon_mode: Some(false),
+        svid_file_name: Some("custom_cert.pem".to_string()),
+        svid_key_file_name: Some("custom_key.pem".to_string()),
+        ..Default::default()
+    };
 
-//     let result = oneshot::run(config).await;
-//     assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
+    let result = oneshot::run(config).await;
+    assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
 
-//     // Verify custom file names
-//     assert!(
-//         cert_dir.join("custom_cert.pem").exists(),
-//         "Custom certificate file was not created"
-//     );
-//     assert!(
-//         cert_dir.join("custom_key.pem").exists(),
-//         "Custom key file was not created"
-//     );
+    // Verify custom file names
+    assert!(
+        cert_dir.join("custom_cert.pem").exists(),
+        "Custom certificate file was not created"
+    );
+    assert!(
+        cert_dir.join("custom_key.pem").exists(),
+        "Custom key file was not created"
+    );
 
-//     server_handle.abort();
-// }
+    server_handle.abort();
+}
 
-// /// Test that one-shot mode creates the certificate directory if it doesn't exist
-// #[tokio::test]
-// async fn test_oneshot_mode_creates_cert_directory() {
-//     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-//     let socket_path = temp_dir.path().join("agent.sock");
-//     let cert_dir = temp_dir.path().join("nested").join("certs").join("dir");
+/// Test that one-shot mode creates the certificate directory if it doesn't exist
+#[tokio::test]
+async fn test_oneshot_mode_creates_cert_directory() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let socket_path = temp_dir.path().join("agent.sock");
+    let cert_dir = temp_dir.path().join("nested").join("certs").join("dir");
 
-//     // Ensure the nested directory doesn't exist
-//     assert!(!cert_dir.exists());
+    // Ensure the nested directory doesn't exist
+    assert!(!cert_dir.exists());
 
-//     let socket_path_clone = socket_path.clone();
-//     let server_handle = tokio::spawn(async move {
-//         start_mock_agent(&socket_path_clone).await;
-//     });
+    let socket_path_clone = socket_path.clone();
+    let server_handle = tokio::spawn(async move {
+        start_mock_agent(&socket_path_clone).await;
+    });
 
-//     wait_for_socket(&socket_path).await;
+    wait_for_socket(&socket_path).await;
 
-//     let config = Config {
-//         agent_address: Some(format!("unix://{}", socket_path.display())),
-//         cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
-//         daemon_mode: Some(false),
-//         ..Default::default()
-//     };
+    let config = Config {
+        agent_address: Some(format!("unix://{}", socket_path.display())),
+        cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+        daemon_mode: Some(false),
+        ..Default::default()
+    };
 
-//     let result = oneshot::run(config).await;
-//     assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
+    let result = oneshot::run(config).await;
+    assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
 
-//     // Verify directory and files were created
-//     assert!(cert_dir.exists(), "Certificate directory was not created");
-//     assert!(
-//         cert_dir.join("svid.pem").exists(),
-//         "Certificate file was not created"
-//     );
-//     assert!(
-//         cert_dir.join("svid_key.pem").exists(),
-//         "Private key file was not created"
-//     );
+    // Verify directory and files were created
+    assert!(cert_dir.exists(), "Certificate directory was not created");
+    assert!(
+        cert_dir.join("svid.pem").exists(),
+        "Certificate file was not created"
+    );
+    assert!(
+        cert_dir.join("svid_key.pem").exists(),
+        "Private key file was not created"
+    );
 
-//     server_handle.abort();
-// }
+    server_handle.abort();
+}
 
-// /// Test that certificates contain valid SPIFFE ID
-// #[tokio::test]
-// async fn test_oneshot_mode_certificate_contains_spiffe_id() {
-//     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-//     let socket_path = temp_dir.path().join("agent.sock");
-//     let cert_dir = temp_dir.path().join("certs");
+/// Test that certificates contain valid SPIFFE ID
+#[tokio::test]
+async fn test_oneshot_mode_certificate_contains_spiffe_id() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let socket_path = temp_dir.path().join("agent.sock");
+    let cert_dir = temp_dir.path().join("certs");
 
-//     let socket_path_clone = socket_path.clone();
-//     let server_handle = tokio::spawn(async move {
-//         start_mock_agent(&socket_path_clone).await;
-//     });
+    let socket_path_clone = socket_path.clone();
+    let server_handle = tokio::spawn(async move {
+        start_mock_agent(&socket_path_clone).await;
+    });
 
-//     wait_for_socket(&socket_path).await;
+    wait_for_socket(&socket_path).await;
 
-//     let config = Config {
-//         agent_address: Some(format!("unix://{}", socket_path.display())),
-//         cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
-//         daemon_mode: Some(false),
-//         ..Default::default()
-//     };
+    let config = Config {
+        agent_address: Some(format!("unix://{}", socket_path.display())),
+        cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+        daemon_mode: Some(false),
+        ..Default::default()
+    };
 
-//     let result = oneshot::run(config).await;
-//     assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
+    let result = oneshot::run(config).await;
+    assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
 
-//     // Read and parse the certificate to verify SPIFFE ID
-//     let cert_pem = fs::read_to_string(cert_dir.join("svid.pem")).unwrap();
-//     let pem_data = pem::parse(&cert_pem).expect("Failed to parse certificate PEM");
+    // Read and parse the certificate to verify SPIFFE ID
+    let cert_pem = fs::read_to_string(cert_dir.join("svid.pem")).unwrap();
+    let pem_data = pem::parse(&cert_pem).expect("Failed to parse certificate PEM");
 
-//     // Parse the certificate
-//     let (_, cert) =
-//         x509_parser::parse_x509_certificate(&pem_data.contents).expect("Failed to parse X.509");
+    // Parse the certificate
+    let (_, cert) =
+        x509_parser::parse_x509_certificate(&pem_data.contents).expect("Failed to parse X.509");
 
-//     // Check for SPIFFE ID in Subject Alternative Names
-//     let san_ext = cert
-//         .subject_alternative_name()
-//         .expect("Failed to get SAN extension")
-//         .expect("No SAN extension found");
+    // Check for SPIFFE ID in Subject Alternative Names
+    let san_ext = cert
+        .subject_alternative_name()
+        .expect("Failed to get SAN extension")
+        .expect("No SAN extension found");
 
-//     let has_spiffe_uri = san_ext.value.general_names.iter().any(|name| {
-//         if let x509_parser::prelude::GeneralName::URI(uri) = name {
-//             uri.starts_with("spiffe://")
-//         } else {
-//             false
-//         }
-//     });
+    let has_spiffe_uri = san_ext.value.general_names.iter().any(|name| {
+        if let x509_parser::prelude::GeneralName::URI(uri) = name {
+            uri.starts_with("spiffe://")
+        } else {
+            false
+        }
+    });
 
-//     assert!(has_spiffe_uri, "Certificate does not contain SPIFFE URI");
+    assert!(has_spiffe_uri, "Certificate does not contain SPIFFE URI");
 
-//     server_handle.abort();
-// }
+    server_handle.abort();
+}
 
 /// Start the mock SPIRE agent on the given socket path
 async fn start_mock_agent(socket_path: &PathBuf) {
