@@ -2,8 +2,6 @@ use anyhow::{Context, Result};
 use spiffe::bundle::BundleSource;
 use spiffe::X509Source;
 use std::path::Path;
-use std::process::ExitStatus;
-use std::sync::Arc;
 use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
@@ -30,10 +28,7 @@ pub async fn run(config: Config) -> Result<()> {
         .context("Failed to parse renew_signal")?;
 
     // Create X509Source (this waits for the first update)
-    let source = workload_api::X509SourceFactory::new()
-        .with_address(config.agent_address()?)
-        .create()
-        .await?;
+    let source = workload_api::create_x509_source(config.agent_address()?).await?;
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write
@@ -135,7 +130,7 @@ pub async fn run(config: Config) -> Result<()> {
                 }
             }, if child.is_some() => {
                 let status_str = match status {
-                    Ok(s) => (s as ExitStatus).to_string(),
+                    Ok(s) => s.to_string(),
                     Err(e) => format!("error: {e}"),
                 };
                 println!("Managed process exited: {status_str}");
@@ -173,7 +168,7 @@ pub async fn run(config: Config) -> Result<()> {
     result
 }
 
-fn fetch_and_process_update(source: &Arc<X509Source>, config: &Config) -> Result<()> {
+fn fetch_and_process_update(source: &X509Source, config: &Config) -> Result<()> {
     let svid = source
         .svid()
         .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?;
