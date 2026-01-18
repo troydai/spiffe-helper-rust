@@ -14,7 +14,8 @@
   },
   "permissions": {
     "allow": [
-      "Bash(cargo :*)",
+      "Bash(cargo:*)",
+      "Bash(ls:*)",
       "Bash(cat :*)",
       "Bash(git :*)",
       "Bash(gh :*)",
