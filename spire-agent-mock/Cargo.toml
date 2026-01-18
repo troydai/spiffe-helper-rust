@@ -14,6 +14,9 @@ tempfile = "3.8"
 futures-util = "0.3"
 tokio-stream = { version = "0.1", features = ["net"] }
 clap = { version = "4.4", features = ["derive", "env"] }
+rcgen = { version = "0.13", features = ["pem"] }
+time = "0.3"
+async-stream = "0.3"
 
 [build-dependencies]
 tonic-build = "0.9"
