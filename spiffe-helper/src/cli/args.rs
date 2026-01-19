@@ -23,22 +23,9 @@ pub struct Args {
     pub version: bool,
 }
 
-pub enum OperationModel {
-    RunDaemon(Config),
-    RunOnce(Config),
-}
-
 impl Args {
-    pub fn is_version_op(&self) -> bool {
-        if self.version {
-            return true;
-        }
-
-        false
-    }
-
     pub fn get_operation_config(&self) -> Result<Config> {
-        if self.is_version_op() {
+        if self.version {
             return Err(anyhow!("Unexpected error: should return version"));
         }
 

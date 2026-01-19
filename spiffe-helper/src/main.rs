@@ -9,7 +9,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 async fn main() -> Result<()> {
     let args = cli::Args::parse();
 
-    if args.is_version_op() {
+    if args.version {
         println!("{VERSION}");
         return Ok(());
     }
@@ -27,5 +27,5 @@ async fn main() -> Result<()> {
         return oneshot::run(x509_source, config).await;
     }
 
-    daemon::run(config).await
+    daemon::run(x509_source, config).await
 }
