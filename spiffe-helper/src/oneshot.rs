@@ -1,5 +1,5 @@
 use crate::cli::Config;
-use crate::workload_api;
+use crate::workload_api::write_svid_to_files;
 use anyhow::{Context, Result};
 use spiffe::X509Source;
 use std::path::PathBuf;
@@ -13,14 +13,33 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
     let cert_dir_path = PathBuf::from(cert_dir);
-    workload_api::fetch_and_write_x509_svid(
-        source,
+    let svid = (*source
+        .svid()
+        .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 certificate: {e}"))?)
+    .clone();
+
+    write_svid_to_files(
+        &svid,
         &cert_dir_path,
         config.svid_file_name(),
         config.svid_key_file_name(),
     )
-    .await
     .with_context(|| "Failed to fetch X.509 certificate")?;
+
+    // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
+    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    };
+    println!(
+        "Fetched certificate: spiffe_id={}, expires={}",
+        svid.spiffe_id(),
+        expiry
+    );
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
     println!("One-shot mode complete");

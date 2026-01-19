@@ -8,53 +8,19 @@ use std::time::Duration;
 
 use crate::cli::Config;
 
-/// Fetches X.509 SVID (certificate and key) from the SPIRE agent
-/// and writes them to the specified directory.
+/// Writes the X.509 SVID (certificate chain and private key) to the specified directory.
 ///
 /// # Arguments
 ///
-/// * `agent_address` - The address of the SPIRE agent (e.g., "unix:///tmp/agent.sock")
+/// * `svid` - The X.509 SVID containing the certificate chain and private key
 /// * `cert_dir` - Directory where certificates should be written
-/// * `svid_file_name` - Optional filename for the certificate (default: "svid.pem")
-/// * `svid_key_file_name` - Optional filename for the private key (default: "svid_key.pem")
+/// * `svid_file_name` - Filename for the certificate (default: "svid.pem" when provided by config)
+/// * `svid_key_file_name` - Filename for the private key (default: "svid_key.pem" when provided by config)
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if successful, or an error if fetching or writing fails.
-pub async fn fetch_and_write_x509_svid(
-    source: X509Source,
-    cert_dir: &Path,
-    svid_file_name: &str,
-    svid_key_file_name: &str,
-) -> Result<()> {
-    // Get the SVID from the source
-    let svid: X509Svid = (*source
-        .svid()
-        .map_err(|e| anyhow::anyhow!("Failed to get SVID from source: {e}"))?)
-    .clone();
-
-    write_svid_to_files(&svid, cert_dir, svid_file_name, svid_key_file_name)?;
-
-    // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
-    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
-        Ok((_, cert)) => cert
-            .validity()
-            .not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "unknown".to_string()),
-        Err(_) => "unknown".to_string(),
-    };
-    println!(
-        "Fetched certificate: spiffe_id={}, expires={}",
-        svid.spiffe_id(),
-        expiry
-    );
-
-    Ok(())
-}
-
-/// Writes the X.509 SVID to the specified directory.
-fn write_svid_to_files(
+/// Returns `Ok(())` if successful, or an error if writing fails.
+pub(crate) fn write_svid_to_files(
     svid: &X509Svid,
     cert_dir: &Path,
     svid_file_name: &str,
