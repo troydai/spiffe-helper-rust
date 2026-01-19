@@ -4,5 +4,4 @@ pub mod health;
 pub mod oneshot;
 pub mod process;
 pub mod signal;
-pub mod svid;
 pub mod workload_api;

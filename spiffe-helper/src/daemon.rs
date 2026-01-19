@@ -19,7 +19,7 @@ const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 
 /// Runs the daemon mode: fetches initial certificate, starts health server,
 /// and waits for SIGTERM.
-pub async fn run(config: Config) -> Result<()> {
+pub async fn run(source: X509Source, config: Config) -> Result<()> {
     println!("Starting spiffe-helper daemon...");
 
     // Parse renew signal if configured
@@ -30,8 +30,6 @@ pub async fn run(config: Config) -> Result<()> {
         .transpose()
         .context("Failed to parse renew_signal")?;
 
-    // Create X509Source (this waits for the first update)
-    let source = workload_api::create_x509_source(config.agent_address()?).await?;
     println!("Connected to SPIRE agent");
 
     // Initial fetch and write

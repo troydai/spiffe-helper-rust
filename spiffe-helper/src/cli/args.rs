@@ -1,5 +1,5 @@
 use crate::cli::config::{self, Config};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -23,16 +23,10 @@ pub struct Args {
     pub version: bool,
 }
 
-pub enum Operation {
-    RunDaemon(Config),
-    RunOnce(Config),
-    Version,
-}
-
 impl Args {
-    pub fn get_operation(&self) -> Result<Operation> {
+    pub fn get_operation_config(&self) -> Result<Config> {
         if self.version {
-            return Ok(Operation::Version);
+            return Err(anyhow!("Unexpected error: should return version"));
         }
 
         // Parse config file
@@ -46,10 +40,6 @@ impl Args {
         // Validate required configuration fields early
         config.validate()?;
 
-        if config.is_daemon_mode() {
-            return Ok(Operation::RunDaemon(config));
-        }
-
-        Ok(Operation::RunOnce(config))
+        Ok(config)
     }
 }

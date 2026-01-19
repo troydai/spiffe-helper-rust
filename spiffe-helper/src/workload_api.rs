@@ -22,19 +22,11 @@ use crate::cli::Config;
 ///
 /// Returns `Ok(())` if successful, or an error if fetching or writing fails.
 pub async fn fetch_and_write_x509_svid(
-    agent_address: &str,
+    source: X509Source,
     cert_dir: &Path,
     svid_file_name: &str,
     svid_key_file_name: &str,
 ) -> Result<()> {
-    let endpoint = normalize_endpoint(agent_address);
-    let source = X509SourceBuilder::new()
-        .endpoint(&endpoint)
-        .reconnect_backoff(Duration::from_secs(1), Duration::from_secs(16))
-        .build()
-        .await
-        .context("Failed to create X509Source from SPIRE agent")?;
-
     // Get the SVID from the source
     let svid: X509Svid = (*source
         .svid()

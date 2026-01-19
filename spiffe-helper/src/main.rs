@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
 
-use spiffe_helper::{cli, daemon, oneshot};
+use spiffe_helper::{cli, daemon, oneshot, workload_api};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -9,12 +9,23 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 async fn main() -> Result<()> {
     let args = cli::Args::parse();
 
-    match args.get_operation()? {
-        cli::Operation::Version => {
-            println!("{VERSION}");
-            Ok(())
-        }
-        cli::Operation::RunDaemon(config) => daemon::run(config).await,
-        cli::Operation::RunOnce(config) => oneshot::run(config).await,
+    if args.version {
+        println!("{VERSION}");
+        return Ok(());
     }
+
+    let config = args.get_operation_config()?;
+    let x509_source = workload_api::create_x509_source(
+        config
+            .agent_address
+            .as_ref()
+            .ok_or_else(|| anyhow!("missing agent address"))?,
+    )
+    .await?;
+
+    if !config.is_daemon_mode() {
+        return oneshot::run(x509_source, config).await;
+    }
+
+    daemon::run(x509_source, config).await
 }

@@ -1,6 +1,7 @@
 use spiffe_helper::cli::Config;
 use spiffe_helper::daemon;
 use spiffe_helper::signal;
+use spiffe_helper::workload_api;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -21,8 +22,9 @@ async fn test_daemon_rotates_certs_then_shutdown() {
 
     common::assert_socket_ready(&socket_path).await;
 
+    let agent_address = format!("unix://{}", socket_path.display());
     let config = Config {
-        agent_address: Some(format!("unix://{}", socket_path.display())),
+        agent_address: Some(agent_address.clone()),
         cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
         daemon_mode: Some(true),
         svid_file_name: Some("svid.pem".to_string()),
@@ -30,7 +32,10 @@ async fn test_daemon_rotates_certs_then_shutdown() {
         ..Default::default()
     };
 
-    let daemon_handle = tokio::spawn(async move { daemon::run(config).await });
+    let source = workload_api::create_x509_source(&agent_address)
+        .await
+        .expect("Failed to create X509Source");
+    let daemon_handle = tokio::spawn(async move { daemon::run(source, config).await });
 
     let cert_path = cert_dir.join("svid.pem");
     let key_path = cert_dir.join("svid_key.pem");
