@@ -90,10 +90,10 @@ When asked to work on a specific GitHub issue, follow this sequence:
 
 1. **Create branch and worktree**
    ```bash
-   # Create worktree at ~/code/.worktree/<relative_path_from_code>/<worktree_name>
-   # For this repo: ~/code/.worktree/github.com/troydai/spiffe-helper-rust/<branch_name>
-   git worktree add ~/code/.worktree/github.com/troydai/spiffe-helper-rust/<branch_name> -b <branch_name>
-   cd ~/code/.worktree/github.com/troydai/spiffe-helper-rust/<branch_name>
+   # Use gwt to create and manage the worktree for the branch.
+   # It prints the worktree path (shell integration may auto-cd).
+   gwt sw -b <branch_name>
+   cd <printed_path>
    ```
 
 2. **Read the GitHub issue carefully and form a plan**
