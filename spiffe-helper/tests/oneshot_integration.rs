@@ -1,5 +1,5 @@
 use spiffe_helper::cli::Config;
-use spiffe_helper::oneshot;
+use spiffe_helper::{oneshot, workload_api};
 use tempfile::TempDir;
 
 mod common;
@@ -25,8 +25,9 @@ async fn test_oneshot_writes_cert_and_key() {
     common::assert_socket_ready(&socket_path).await;
 
     // Configure spiffe-helper for one-shot mode
+    let agent_address = format!("unix://{}", socket_path.display());
     let config = Config {
-        agent_address: Some(format!("unix://{}", socket_path.display())),
+        agent_address: Some(agent_address.clone()),
         cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
         daemon_mode: Some(false),
         svid_file_name: Some("svid.pem".to_string()),
@@ -35,7 +36,10 @@ async fn test_oneshot_writes_cert_and_key() {
     };
 
     // Run one-shot mode
-    let result = oneshot::run(config).await;
+    let source = workload_api::create_x509_source(&agent_address)
+        .await
+        .expect("Failed to create X509Source");
+    let result = oneshot::run(source, config).await;
     assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
 
     // Verify certificate files were written
@@ -65,8 +69,9 @@ async fn test_oneshot_creates_dir_and_custom_files() {
 
     common::assert_socket_ready(&socket_path).await;
 
+    let agent_address = format!("unix://{}", socket_path.display());
     let config = Config {
-        agent_address: Some(format!("unix://{}", socket_path.display())),
+        agent_address: Some(agent_address.clone()),
         cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
         daemon_mode: Some(false),
         svid_file_name: Some("custom_cert.pem".to_string()),
@@ -74,7 +79,10 @@ async fn test_oneshot_creates_dir_and_custom_files() {
         ..Default::default()
     };
 
-    let result = oneshot::run(config).await;
+    let source = workload_api::create_x509_source(&agent_address)
+        .await
+        .expect("Failed to create X509Source");
+    let result = oneshot::run(source, config).await;
     assert!(result.is_ok(), "One-shot mode failed: {:?}", result.err());
 
     // Verify directory and custom file names
