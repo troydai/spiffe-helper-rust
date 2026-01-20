@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::time::{interval, Duration, MissedTickBehavior};
 
 use crate::cli::HealthChecks;
 
@@ -10,6 +11,7 @@ pub enum HealthCheckServer {
     Disabled,
     Enabled {
         handle: JoinHandle<Result<()>>,
+        liveness_handle: JoinHandle<()>,
         receiver: oneshot::Receiver<Result<()>>,
     },
 }
@@ -30,9 +32,15 @@ impl HealthCheckServer {
             HealthCheckServer::Disabled => std::future::pending().await,
             HealthCheckServer::Enabled {
                 handle: _,
+                liveness_handle,
                 receiver,
             } => match receiver.await {
-                Ok(res) => res,
+                Ok(res) => {
+                    if !liveness_handle.is_finished() {
+                        liveness_handle.abort();
+                    }
+                    res
+                }
                 Err(_) => Err(anyhow::anyhow!("Health check server task disappeared")),
             },
         }
@@ -44,11 +52,15 @@ impl HealthCheckServer {
             HealthCheckServer::Disabled => (),
             HealthCheckServer::Enabled {
                 handle,
+                liveness_handle,
                 receiver: _,
             } => {
                 if !handle.is_finished() {
                     handle.abort();
                     println!("Health check server stopped");
+                }
+                if !liveness_handle.is_finished() {
+                    liveness_handle.abort();
                 }
             }
         }
@@ -67,6 +79,15 @@ async fn liveness_handler() -> impl IntoResponse {
 
 async fn readiness_handler() -> impl IntoResponse {
     StatusCode::OK
+}
+
+async fn liveness_reporter() {
+    let mut liveness_interval = interval(Duration::from_secs(30));
+    liveness_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        liveness_interval.tick().await;
+        println!("spiffe-helper daemon is alive");
+    }
 }
 
 /// Starts the health check HTTP server if enabled in configuration.
@@ -99,8 +120,11 @@ async fn start(hc: &HealthChecks) -> Result<HealthCheckServer> {
         res
     });
 
+    let liveness_handle = tokio::spawn(liveness_reporter());
+
     let server = HealthCheckServer::Enabled {
         handle,
+        liveness_handle,
         receiver: rx,
     };
 

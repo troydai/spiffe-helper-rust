@@ -3,7 +3,6 @@ use spiffe::X509Source;
 use std::path::Path;
 use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::time::{interval, Duration};
 
 use crate::cli::Config;
 use crate::file_system::LocalFileSystem;
@@ -11,8 +10,6 @@ use crate::health;
 use crate::process;
 use crate::signal;
 use crate::workload_api;
-
-const DEFAULT_LIVENESS_LOG_INTERVAL_SECS: u64 = 30;
 
 /// Runs the daemon mode: fetches initial certificate, starts health server,
 /// and waits for SIGTERM.
@@ -69,9 +66,6 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         signal(SignalKind::terminate()).context("Failed to register SIGTERM handler")?;
 
     let mut update_channel = source.updated();
-    let mut liveness_interval = interval(Duration::from_secs(DEFAULT_LIVENESS_LOG_INTERVAL_SECS));
-    liveness_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
     println!("Daemon running. Waiting for SIGTERM to shutdown...");
 
     let mut result: Result<()> = Ok(());
@@ -112,9 +106,6 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
                     }
                 }
                 break;
-            }
-            _ = liveness_interval.tick() => {
-                println!("spiffe-helper daemon is alive");
             }
             status = async {
                 match child.as_mut() {
