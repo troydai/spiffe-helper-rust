@@ -12,10 +12,9 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
     let local_fs = LocalFileSystem::new(&config)?.ensure()?;
-    let svid = (*source
+    let svid = source
         .svid()
-        .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 certificate: {e}"))?)
-    .clone();
+        .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 certificate: {e}"))?;
     let bundle = source
         .bundle_for_trust_domain(svid.spiffe_id().trust_domain())
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
