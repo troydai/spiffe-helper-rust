@@ -21,7 +21,7 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    workload_api::write_x509_svid_on_update(&svid, &bundle, &local_fs, &config)?;
+    workload_api::write_x509_svid_on_update(&svid, &bundle, &local_fs)?;
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
     println!("One-shot mode complete");

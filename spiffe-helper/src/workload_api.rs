@@ -4,7 +4,6 @@ use spiffe::svid::x509::X509Svid;
 use spiffe::{X509Source, X509SourceBuilder};
 use std::time::Duration;
 
-use crate::cli::Config;
 use crate::file_system::X509CertsWriter;
 
 pub(crate) fn svid_expiry(svid: &X509Svid) -> String {
@@ -32,13 +31,7 @@ pub fn write_x509_svid_on_update<S: X509CertsWriter>(
     svid: &X509Svid,
     bundle: &X509Bundle,
     cert_writer: &S,
-    config: &Config,
 ) -> Result<()> {
-    config
-        .cert_dir
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
-
     cert_writer.write_certs(svid.cert_chain())?;
     cert_writer.write_key(svid.private_key().as_ref())?;
     cert_writer.write_bundle(bundle)?;
@@ -77,6 +70,7 @@ pub async fn create_x509_source(agent_address: &str) -> Result<X509Source> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::Config;
     use crate::file_system::LocalFileSystem;
     use spiffe::bundle::x509::X509Bundle;
     use spiffe::spiffe_id::TrustDomain;
@@ -244,7 +238,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let bundle = get_test_bundle();
 
         let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
-        let result = write_x509_svid_on_update(&svid, &bundle, &local_fs, &config);
+        let result = write_x509_svid_on_update(&svid, &bundle, &local_fs);
         assert!(result.is_ok());
 
         assert!(cert_dir.join("test_svid.pem").exists());
@@ -253,18 +247,13 @@ fPfrHw1nYcPliVB4Zbv8d1w=
     }
 
     #[test]
-    fn test_write_x509_svid_on_update_no_cert_dir() {
+    fn test_write_x509_svid_on_update_with_dummy_writer() {
         let svid = get_test_svid();
         let bundle = get_test_bundle();
-        let config = Config::default();
 
         let cert_writer = DummyStorage;
-        let result = write_x509_svid_on_update(&svid, &bundle, &cert_writer, &config);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("cert_dir must be configured"));
+        let result = write_x509_svid_on_update(&svid, &bundle, &cert_writer);
+        assert!(result.is_ok());
     }
 
     #[test]
