@@ -378,19 +378,27 @@ fn extract_port(val: &hcl::Value) -> anyhow::Result<u16> {
     Err(anyhow!("given value is not a number"))
 }
 
-/// Parse file mode from string, supporting both octal (0644) and decimal notation
+/// Parse file mode from string, supporting octal (0644/644) and decimal notation
 /// Validates that the mode is in the range 0-0777
 pub fn parse_file_mode(mode_str: &str) -> Result<u32> {
     let trimmed = mode_str.trim();
 
-    // If it starts with '0', parse as octal
-    let mode = if trimmed.starts_with('0') && trimmed.len() > 1 {
+    let mode = if trimmed.starts_with("0o") || trimmed.starts_with("0O") {
+        u32::from_str_radix(&trimmed[2..], 8)
+            .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
+    } else if trimmed.starts_with('0') && trimmed.len() > 1 {
         u32::from_str_radix(trimmed, 8)
             .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
     } else {
-        trimmed
+        let decimal = trimmed
             .parse::<u32>()
-            .map_err(|e| anyhow!("Invalid file mode '{}': {}", mode_str, e))?
+            .map_err(|e| anyhow!("Invalid file mode '{}': {}", mode_str, e))?;
+        if decimal > 0o777 && trimmed.chars().all(|c| matches!(c, '0'..='7')) {
+            u32::from_str_radix(trimmed, 8)
+                .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
+        } else {
+            decimal
+        }
     };
 
     // Validate range (0-0777)
@@ -427,6 +435,24 @@ mod tests {
         fn test_parse_file_mode_decimal() {
             let mode = parse_file_mode("420").unwrap();
             assert_eq!(mode, 420);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_without_leading_zero() {
+            let mode = parse_file_mode("644").unwrap();
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_without_leading_zero_key() {
+            let mode = parse_file_mode("600").unwrap();
+            assert_eq!(mode, 0o600);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_with_0o_prefix() {
+            let mode = parse_file_mode("0o700").unwrap();
+            assert_eq!(mode, 0o700);
         }
 
         #[test]

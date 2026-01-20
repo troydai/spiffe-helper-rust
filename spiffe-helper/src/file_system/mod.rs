@@ -1,8 +1,8 @@
 /* The file_system module abstract the interaction of this program with the FileSystem */
 
-use std::{fs, path::PathBuf, str::FromStr};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::{fs, path::PathBuf, str::FromStr};
 
 use anyhow::{anyhow, Context, Result};
 use spiffe::bundle::x509::X509Bundle;
@@ -79,8 +79,9 @@ impl X509CertsWriter for LocalFileSystem {
             .collect::<Vec<_>>()
             .join("\n");
 
-        fs::write(&self.cer_path, content)
-            .with_context(|| format!("Failed to write certificate to {}", self.cer_path.display()))?;
+        fs::write(&self.cer_path, content).with_context(|| {
+            format!("Failed to write certificate to {}", self.cer_path.display())
+        })?;
 
         #[cfg(unix)]
         fs::set_permissions(&self.cer_path, fs::Permissions::from_mode(self.cert_mode))
