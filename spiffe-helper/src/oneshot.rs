@@ -19,14 +19,6 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
     output.write_certs(svid.cert_chain())?;
     output.write_key(svid.private_key().as_ref())?;
 
-    // write_svid_to_files(
-    //     &svid,
-    //     &cert_dir_path,
-    //     config.svid_file_name(),
-    //     config.svid_key_file_name(),
-    // )
-    // .with_context(|| "Failed to fetch X.509 certificate")?;
-
     // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
     let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
         Ok((_, cert)) => cert
