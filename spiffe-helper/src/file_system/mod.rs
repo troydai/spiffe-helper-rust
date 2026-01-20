@@ -11,7 +11,7 @@ use crate::cli::Config;
 pub trait X509CertsWriter {
     fn write_certs(&self, certificates: &[Certificate]) -> Result<()>;
     fn write_key(&self, key: &[u8]) -> Result<()>;
-    fn write_bundle(&self, bundle: &X509Bundle, bundle_file_name: &str) -> Result<()>;
+    fn write_bundle(&self, bundle: &X509Bundle) -> Result<()>;
 }
 
 #[derive(Debug)]
@@ -19,6 +19,7 @@ pub struct LocalFileSystem {
     output_dir: PathBuf, // from the cert_dir in the config
     cer_path: PathBuf,
     key_path: PathBuf,
+    bundle_path: PathBuf,
 }
 
 impl LocalFileSystem {
@@ -39,6 +40,7 @@ impl LocalFileSystem {
             output_dir: output_dir.clone(),
             cer_path: output_dir.join(config.svid_file_name()),
             key_path: output_dir.join(config.svid_key_file_name()),
+            bundle_path: output_dir.join(config.svid_bundle_file_name()),
         })
     }
 
@@ -85,9 +87,7 @@ impl X509CertsWriter for LocalFileSystem {
             .with_context(|| format!("Failed to write key to {}", self.key_path.display()))
     }
 
-    fn write_bundle(&self, bundle: &X509Bundle, bundle_file_name: &str) -> Result<()> {
-        let bundle_path = self.output_dir.join(bundle_file_name);
-
+    fn write_bundle(&self, bundle: &X509Bundle) -> Result<()> {
         let bundle_pem = bundle
             .authorities()
             .iter()
@@ -100,7 +100,7 @@ impl X509CertsWriter for LocalFileSystem {
             .collect::<Vec<_>>()
             .join("\n");
 
-        fs::write(&bundle_path, bundle_pem)
-            .with_context(|| format!("Failed to write bundle to {}", bundle_path.display()))
+        fs::write(&self.bundle_path, bundle_pem)
+            .with_context(|| format!("Failed to write bundle to {}", self.bundle_path.display()))
     }
 }

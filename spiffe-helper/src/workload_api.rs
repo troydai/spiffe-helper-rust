@@ -41,7 +41,7 @@ pub fn write_x509_svid_on_update<S: X509CertsWriter>(
 
     cert_writer.write_certs(svid.cert_chain())?;
     cert_writer.write_key(svid.private_key().as_ref())?;
-    cert_writer.write_bundle(bundle, config.svid_bundle_file_name())?;
+    cert_writer.write_bundle(bundle)?;
 
     // Log update with SPIFFE ID and certificate expiry
     println!(
@@ -157,7 +157,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
             Ok(())
         }
 
-        fn write_bundle(&self, _bundle: &X509Bundle, _bundle_file_name: &str) -> Result<()> {
+        fn write_bundle(&self, _bundle: &X509Bundle) -> Result<()> {
             Ok(())
         }
     }
@@ -214,12 +214,13 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let bundle = get_test_bundle();
         let config = Config {
             cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+            svid_bundle_file_name: Some("bundle.pem".to_string()),
             ..Default::default()
         };
 
         let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
         local_fs
-            .write_bundle(&bundle, "bundle.pem")
+            .write_bundle(&bundle)
             .expect("Failed to write bundle");
 
         assert!(cert_dir.join("bundle.pem").exists());
