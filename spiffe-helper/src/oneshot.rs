@@ -1,4 +1,4 @@
-use crate::{cli::Config, file_system::Storage};
+use crate::{cli::Config, file_system::LocalFileSystem, workload_api};
 use anyhow::Result;
 use spiffe::X509Source;
 
@@ -10,29 +10,8 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
-    let output = Storage::new(&config)?.ensure()?;
-    let svid = (*source
-        .svid()
-        .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 certificate: {e}"))?)
-    .clone();
-
-    output.write_certs(svid.cert_chain())?;
-    output.write_key(svid.private_key().as_ref())?;
-
-    // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
-    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
-        Ok((_, cert)) => cert
-            .validity()
-            .not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "unknown".to_string()),
-        Err(_) => "unknown".to_string(),
-    };
-    println!(
-        "Fetched certificate: spiffe_id={}, expires={}",
-        svid.spiffe_id(),
-        expiry
-    );
+    let local_fs = LocalFileSystem::new(&config)?.ensure()?;
+    workload_api::fetch_and_write_x509_svid(&source, &local_fs)?;
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
     println!("One-shot mode complete");

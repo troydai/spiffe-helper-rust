@@ -1,92 +1,37 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::x509::X509Bundle;
+use spiffe::bundle::BundleSource;
 use spiffe::svid::x509::X509Svid;
 use spiffe::{X509Source, X509SourceBuilder};
-use std::fs;
-use std::path::Path;
 use std::time::Duration;
 
-use crate::cli::Config;
+use crate::file_system::X509CertsWriter;
 
-/// Writes the X.509 SVID (certificate chain and private key) to the specified directory.
-///
-/// # Arguments
-///
-/// * `svid` - The X.509 SVID containing the certificate chain and private key
-/// * `cert_dir` - Directory where certificates should be written
-/// * `svid_file_name` - Filename for the certificate (default: "svid.pem" when provided by config)
-/// * `svid_key_file_name` - Filename for the private key (default: "svid_key.pem" when provided by config)
-///
-/// # Returns
-///
-/// Returns `Ok(())` if successful, or an error if writing fails.
-pub(crate) fn write_svid_to_files(
-    svid: &X509Svid,
-    cert_dir: &Path,
-    svid_file_name: &str,
-    svid_key_file_name: &str,
-) -> Result<()> {
-    // Create cert directory if it doesn't exist
-    fs::create_dir_all(cert_dir)
-        .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
-
-    // Determine file paths
-    let cert_path = cert_dir.join(svid_file_name);
-    let key_path = cert_dir.join(svid_key_file_name);
-
-    // Write certificate (PEM format)
-    let cert_pem = svid
-        .cert_chain()
-        .iter()
-        .map(|cert| {
-            pem::encode(&pem::Pem {
-                tag: "CERTIFICATE".to_string(),
-                contents: cert.as_ref().to_vec(),
-            })
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    fs::write(&cert_path, cert_pem)
-        .with_context(|| format!("Failed to write certificate to {}", cert_path.display()))?;
-
-    // Write private key (PEM format)
-    let key_pem = pem::encode(&pem::Pem {
-        tag: "PRIVATE KEY".to_string(),
-        contents: svid.private_key().as_ref().to_vec(),
-    });
-
-    fs::write(&key_path, key_pem)
-        .with_context(|| format!("Failed to write private key to {}", key_path.display()))?;
-
-    Ok(())
+fn svid_expiry(svid: &X509Svid) -> String {
+    match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    }
 }
 
-/// Writes the X.509 trust bundle to the specified directory.
-fn write_bundle_to_file(
-    bundle: &X509Bundle,
-    cert_dir: &Path,
-    bundle_file_name: &str,
+pub fn fetch_and_write_x509_svid<S: X509CertsWriter>(
+    source: &X509Source,
+    cert_writer: &S,
 ) -> Result<()> {
-    let bundle_path = cert_dir.join(bundle_file_name);
+    let svid = source
+        .svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?;
 
-    // Write bundle certificates (PEM format)
-    let bundle_pem = bundle
-        .authorities()
-        .iter()
-        .map(|cert: &spiffe::cert::Certificate| {
-            pem::encode(&pem::Pem {
-                tag: "CERTIFICATE".to_string(),
-                contents: cert.as_ref().to_vec(),
-            })
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let bundle = source
+        .bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    fs::write(&bundle_path, bundle_pem)
-        .with_context(|| format!("Failed to write bundle to {}", bundle_path.display()))?;
-
-    Ok(())
+    write_x509_svid_on_update(&svid, &bundle, cert_writer)
 }
 
 /// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.
@@ -99,39 +44,20 @@ fn write_bundle_to_file(
 /// * `svid` - The updated X509 SVID containing the certificate chain and private key
 /// * `bundle` - The trust bundle containing CA certificates
 /// * `config` - Configuration containing output paths
-pub fn write_x509_svid_on_update(
+pub fn write_x509_svid_on_update<S: X509CertsWriter>(
     svid: &X509Svid,
     bundle: &X509Bundle,
-    config: &Config,
+    cert_writer: &S,
 ) -> Result<()> {
-    let cert_dir = config
-        .cert_dir
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
-    let cert_dir_path = Path::new(cert_dir);
-
-    write_svid_to_files(
-        svid,
-        cert_dir_path,
-        config.svid_file_name(),
-        config.svid_key_file_name(),
-    )?;
-
-    write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name())?;
+    cert_writer.write_certs(svid.cert_chain())?;
+    cert_writer.write_key(svid.private_key().as_ref())?;
+    cert_writer.write_bundle(bundle)?;
 
     // Log update with SPIFFE ID and certificate expiry
-    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
-        Ok((_, cert)) => cert
-            .validity()
-            .not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "unknown".to_string()),
-        Err(_) => "unknown".to_string(),
-    };
     println!(
         "Updated certificate: spiffe_id={}, expires={}",
         svid.spiffe_id(),
-        expiry
+        svid_expiry(svid)
     );
 
     Ok(())
@@ -161,6 +87,8 @@ pub async fn create_x509_source(agent_address: &str) -> Result<X509Source> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::Config;
+    use crate::file_system::LocalFileSystem;
     use spiffe::bundle::x509::X509Bundle;
     use spiffe::spiffe_id::TrustDomain;
     use spiffe::svid::x509::X509Svid;
@@ -229,6 +157,22 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         X509Bundle::parse_from_der(td, &cert_der).expect("Failed to parse Bundle")
     }
 
+    struct DummyStorage;
+
+    impl X509CertsWriter for DummyStorage {
+        fn write_certs(&self, _certificates: &[spiffe::cert::Certificate]) -> Result<()> {
+            Ok(())
+        }
+
+        fn write_key(&self, _key: &[u8]) -> Result<()> {
+            Ok(())
+        }
+
+        fn write_bundle(&self, _bundle: &X509Bundle) -> Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_normalize_endpoint_with_triple_slash() {
         let result = normalize_endpoint("unix:///tmp/test.sock");
@@ -249,12 +193,21 @@ fPfrHw1nYcPliVB4Zbv8d1w=
     }
 
     #[test]
-    fn test_write_svid_to_files_success() {
+    fn test_storage_write_svid_success() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
         let svid = get_test_svid();
 
-        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem").unwrap();
+        let config = Config {
+            cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+            svid_file_name: Some("svid.pem".to_string()),
+            svid_key_file_name: Some("svid_key.pem".to_string()),
+            ..Default::default()
+        };
+        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+
+        local_fs.write_certs(svid.cert_chain()).unwrap();
+        local_fs.write_key(svid.private_key().as_ref()).unwrap();
 
         assert!(cert_dir.join("svid.pem").exists());
         assert!(cert_dir.join("svid_key.pem").exists());
@@ -270,8 +223,16 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
         let bundle = get_test_bundle();
+        let config = Config {
+            cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+            svid_bundle_file_name: Some("bundle.pem".to_string()),
+            ..Default::default()
+        };
 
-        write_bundle_to_file(&bundle, cert_dir, "bundle.pem").unwrap();
+        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+        local_fs
+            .write_bundle(&bundle)
+            .expect("Failed to write bundle");
 
         assert!(cert_dir.join("bundle.pem").exists());
         let content = fs::read_to_string(cert_dir.join("bundle.pem")).unwrap();
@@ -293,7 +254,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let svid = get_test_svid();
         let bundle = get_test_bundle();
 
-        let result = write_x509_svid_on_update(&svid, &bundle, &config);
+        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+        let result = write_x509_svid_on_update(&svid, &bundle, &local_fs);
         assert!(result.is_ok());
 
         assert!(cert_dir.join("test_svid.pem").exists());
@@ -302,17 +264,13 @@ fPfrHw1nYcPliVB4Zbv8d1w=
     }
 
     #[test]
-    fn test_write_x509_svid_on_update_no_cert_dir() {
+    fn test_write_x509_svid_on_update_with_dummy_writer() {
         let svid = get_test_svid();
         let bundle = get_test_bundle();
-        let config = Config::default();
 
-        let result = write_x509_svid_on_update(&svid, &bundle, &config);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("cert_dir must be configured"));
+        let cert_writer = DummyStorage;
+        let result = write_x509_svid_on_update(&svid, &bundle, &cert_writer);
+        assert!(result.is_ok());
     }
 
     #[test]

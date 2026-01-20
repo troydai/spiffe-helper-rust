@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::time::{interval, Duration, MissedTickBehavior};
 
 use crate::cli::HealthChecks;
 
@@ -9,7 +10,8 @@ use crate::cli::HealthChecks;
 pub enum HealthCheckServer {
     Disabled,
     Enabled {
-        handle: JoinHandle<Result<()>>,
+        server_handle: JoinHandle<Result<()>>,
+        heartbeat_handle: JoinHandle<()>,
         receiver: oneshot::Receiver<Result<()>>,
     },
 }
@@ -29,10 +31,16 @@ impl HealthCheckServer {
         match self {
             HealthCheckServer::Disabled => std::future::pending().await,
             HealthCheckServer::Enabled {
-                handle: _,
+                server_handle: _,
+                heartbeat_handle,
                 receiver,
             } => match receiver.await {
-                Ok(res) => res,
+                Ok(res) => {
+                    if !heartbeat_handle.is_finished() {
+                        heartbeat_handle.abort();
+                    }
+                    res
+                }
                 Err(_) => Err(anyhow::anyhow!("Health check server task disappeared")),
             },
         }
@@ -43,12 +51,16 @@ impl HealthCheckServer {
         match self {
             HealthCheckServer::Disabled => (),
             HealthCheckServer::Enabled {
-                handle,
+                server_handle,
+                heartbeat_handle,
                 receiver: _,
             } => {
-                if !handle.is_finished() {
-                    handle.abort();
+                if !server_handle.is_finished() {
+                    server_handle.abort();
                     println!("Health check server stopped");
+                }
+                if !heartbeat_handle.is_finished() {
+                    heartbeat_handle.abort();
                 }
             }
         }
@@ -67,6 +79,15 @@ async fn liveness_handler() -> impl IntoResponse {
 
 async fn readiness_handler() -> impl IntoResponse {
     StatusCode::OK
+}
+
+async fn heartbeat_reporter() {
+    let mut liveness_interval = interval(Duration::from_secs(30));
+    liveness_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        liveness_interval.tick().await;
+        println!("spiffe-helper daemon is alive");
+    }
 }
 
 /// Starts the health check HTTP server if enabled in configuration.
@@ -88,7 +109,7 @@ async fn start(hc: &HealthChecks) -> Result<HealthCheckServer> {
         .await
         .with_context(|| format!("Failed to bind to {addr}"))?;
 
-    let handle = tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         let res = axum::serve(listener, app)
             .await
             .context("Health check server stopped");
@@ -99,8 +120,11 @@ async fn start(hc: &HealthChecks) -> Result<HealthCheckServer> {
         res
     });
 
+    let heartbeat_handle = tokio::spawn(heartbeat_reporter());
+
     let server = HealthCheckServer::Enabled {
-        handle,
+        server_handle,
+        heartbeat_handle,
         receiver: rx,
     };
 
