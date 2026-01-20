@@ -3,18 +3,25 @@
 use std::{fs, path::PathBuf, str::FromStr};
 
 use anyhow::{anyhow, Context, Result};
+use spiffe::bundle::x509::X509Bundle;
 use spiffe::cert::Certificate;
 
 use crate::cli::Config;
 
+pub trait X509CertsWriter {
+    fn write_certs(&self, certificates: &[Certificate]) -> Result<()>;
+    fn write_key(&self, key: &[u8]) -> Result<()>;
+    fn write_bundle(&self, bundle: &X509Bundle, bundle_file_name: &str) -> Result<()>;
+}
+
 #[derive(Debug)]
-pub struct Storage {
+pub struct LocalFileSystem {
     output_dir: PathBuf, // from the cert_dir in the config
     cer_path: PathBuf,
     key_path: PathBuf,
 }
 
-impl Storage {
+impl LocalFileSystem {
     pub fn new(config: &Config) -> Result<Self> {
         let cert_dir = config
             .cert_dir
@@ -47,8 +54,10 @@ impl Storage {
 
         Ok(self)
     }
+}
 
-    pub fn write_certs(&self, certificates: &[Certificate]) -> Result<()> {
+impl X509CertsWriter for LocalFileSystem {
+    fn write_certs(&self, certificates: &[Certificate]) -> Result<()> {
         let content = certificates
             .iter()
             .map(|c| {
@@ -64,7 +73,7 @@ impl Storage {
             .with_context(|| format!("Failed to write certificate to {}", self.cer_path.display()))
     }
 
-    pub fn write_key(&self, key: &[u8]) -> Result<()> {
+    fn write_key(&self, key: &[u8]) -> Result<()> {
         let key_pem = pem::Pem {
             tag: "PRIVATE KEY".to_string(),
             contents: Vec::from(key),
@@ -74,5 +83,24 @@ impl Storage {
 
         fs::write(&self.key_path, content)
             .with_context(|| format!("Failed to write key to {}", self.key_path.display()))
+    }
+
+    fn write_bundle(&self, bundle: &X509Bundle, bundle_file_name: &str) -> Result<()> {
+        let bundle_path = self.output_dir.join(bundle_file_name);
+
+        let bundle_pem = bundle
+            .authorities()
+            .iter()
+            .map(|cert: &spiffe::cert::Certificate| {
+                pem::encode(&pem::Pem {
+                    tag: "CERTIFICATE".to_string(),
+                    contents: cert.as_ref().to_vec(),
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        fs::write(&bundle_path, bundle_pem)
+            .with_context(|| format!("Failed to write bundle to {}", bundle_path.display()))
     }
 }

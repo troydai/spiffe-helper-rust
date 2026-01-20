@@ -7,6 +7,7 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{interval, Duration};
 
 use crate::cli::Config;
+use crate::file_system::LocalFileSystem;
 use crate::health;
 use crate::process;
 use crate::signal;
@@ -29,8 +30,10 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
 
     println!("Connected to SPIRE agent");
 
+    let local_fs = LocalFileSystem::new(&config)?.ensure()?;
+
     // Initial fetch and write
-    fetch_and_process_update(&source, &config)?;
+    fetch_and_process_update(&source, &local_fs, &config)?;
 
     // Spawn managed child process if configured
     let mut child = if let Some(cmd) = &config.cmd {
@@ -88,7 +91,7 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
                 }
 
                 println!("Received X.509 update notification");
-                if let Err(e) = fetch_and_process_update(&source, &config) {
+                if let Err(e) = fetch_and_process_update(&source, &local_fs, &config) {
                     eprintln!("Failed to handle X.509 update: {e}");
                     continue;
                 }
@@ -178,7 +181,11 @@ fn send_renew_signal(
     }
 }
 
-fn fetch_and_process_update(source: &X509Source, config: &Config) -> Result<()> {
+fn fetch_and_process_update(
+    source: &X509Source,
+    cert_writer: &impl crate::file_system::X509CertsWriter,
+    config: &Config,
+) -> Result<()> {
     let svid = source
         .svid()
         .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?;
@@ -188,5 +195,5 @@ fn fetch_and_process_update(source: &X509Source, config: &Config) -> Result<()> 
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    workload_api::write_x509_svid_on_update(&svid, &bundle, config)
+    workload_api::write_x509_svid_on_update(&svid, &bundle, cert_writer, config)
 }
