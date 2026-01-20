@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use spiffe::bundle::x509::X509Bundle;
+use spiffe::bundle::BundleSource;
 use spiffe::svid::x509::X509Svid;
 use spiffe::{X509Source, X509SourceBuilder};
 use std::time::Duration;
 
 use crate::file_system::X509CertsWriter;
 
-pub(crate) fn svid_expiry(svid: &X509Svid) -> String {
+fn svid_expiry(svid: &X509Svid) -> String {
     match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
         Ok((_, cert)) => cert
             .validity()
@@ -15,6 +16,22 @@ pub(crate) fn svid_expiry(svid: &X509Svid) -> String {
             .unwrap_or_else(|_| "unknown".to_string()),
         Err(_) => "unknown".to_string(),
     }
+}
+
+pub fn fetch_and_write_x509_svid<S: X509CertsWriter>(
+    source: &X509Source,
+    cert_writer: &S,
+) -> Result<()> {
+    let svid = source
+        .svid()
+        .map_err(|e| anyhow::anyhow!("Failed to get SVID: {e}"))?;
+
+    let bundle = source
+        .bundle_for_trust_domain(svid.spiffe_id().trust_domain())
+        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
+
+    write_x509_svid_on_update(&svid, &bundle, cert_writer)
 }
 
 /// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.

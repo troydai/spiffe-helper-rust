@@ -1,6 +1,5 @@
 use crate::{cli::Config, file_system::LocalFileSystem, workload_api};
 use anyhow::Result;
-use spiffe::bundle::BundleSource;
 use spiffe::X509Source;
 
 /// Runs the one-shot mode: fetches certificate and exits.
@@ -12,15 +11,7 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
     let local_fs = LocalFileSystem::new(&config)?.ensure()?;
-    let svid = source
-        .svid()
-        .map_err(|e| anyhow::anyhow!("Failed to fetch X.509 certificate: {e}"))?;
-    let bundle = source
-        .bundle_for_trust_domain(svid.spiffe_id().trust_domain())
-        .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
-
-    workload_api::write_x509_svid_on_update(&svid, &bundle, &local_fs)?;
+    workload_api::fetch_and_write_x509_svid(&source, &local_fs)?;
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
     println!("One-shot mode complete");
