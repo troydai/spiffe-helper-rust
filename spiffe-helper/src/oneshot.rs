@@ -1,4 +1,4 @@
-use crate::{cli::Config, file_system::Storage};
+use crate::{cli::Config, file_system::Storage, workload_api};
 use anyhow::Result;
 use spiffe::X509Source;
 
@@ -20,18 +20,10 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
     output.write_key(svid.private_key().as_ref())?;
 
     // Log with SPIFFE ID and certificate expiry (consistent with write_x509_svid_on_update)
-    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
-        Ok((_, cert)) => cert
-            .validity()
-            .not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "unknown".to_string()),
-        Err(_) => "unknown".to_string(),
-    };
     println!(
         "Fetched certificate: spiffe_id={}, expires={}",
         svid.spiffe_id(),
-        expiry
+        workload_api::svid_expiry(&svid)
     );
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");

@@ -7,60 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::cli::Config;
-
-/// Writes the X.509 SVID (certificate chain and private key) to the specified directory.
-///
-/// # Arguments
-///
-/// * `svid` - The X.509 SVID containing the certificate chain and private key
-/// * `cert_dir` - Directory where certificates should be written
-/// * `svid_file_name` - Filename for the certificate (default: "svid.pem" when provided by config)
-/// * `svid_key_file_name` - Filename for the private key (default: "svid_key.pem" when provided by config)
-///
-/// # Returns
-///
-/// Returns `Ok(())` if successful, or an error if writing fails.
-pub(crate) fn write_svid_to_files(
-    svid: &X509Svid,
-    cert_dir: &Path,
-    svid_file_name: &str,
-    svid_key_file_name: &str,
-) -> Result<()> {
-    // Create cert directory if it doesn't exist
-    fs::create_dir_all(cert_dir)
-        .with_context(|| format!("Failed to create cert directory: {}", cert_dir.display()))?;
-
-    // Determine file paths
-    let cert_path = cert_dir.join(svid_file_name);
-    let key_path = cert_dir.join(svid_key_file_name);
-
-    // Write certificate (PEM format)
-    let cert_pem = svid
-        .cert_chain()
-        .iter()
-        .map(|cert| {
-            pem::encode(&pem::Pem {
-                tag: "CERTIFICATE".to_string(),
-                contents: cert.as_ref().to_vec(),
-            })
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    fs::write(&cert_path, cert_pem)
-        .with_context(|| format!("Failed to write certificate to {}", cert_path.display()))?;
-
-    // Write private key (PEM format)
-    let key_pem = pem::encode(&pem::Pem {
-        tag: "PRIVATE KEY".to_string(),
-        contents: svid.private_key().as_ref().to_vec(),
-    });
-
-    fs::write(&key_path, key_pem)
-        .with_context(|| format!("Failed to write private key to {}", key_path.display()))?;
-
-    Ok(())
-}
+use crate::file_system::Storage;
 
 /// Writes the X.509 trust bundle to the specified directory.
 fn write_bundle_to_file(
@@ -89,6 +36,17 @@ fn write_bundle_to_file(
     Ok(())
 }
 
+pub(crate) fn svid_expiry(svid: &X509Svid) -> String {
+    match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
+        Ok((_, cert)) => cert
+            .validity()
+            .not_after
+            .to_rfc2822()
+            .unwrap_or_else(|_| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    }
+}
+
 /// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.
 ///
 /// This function is called when the `X509Source` receives an update notification.
@@ -110,28 +68,17 @@ pub fn write_x509_svid_on_update(
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
     let cert_dir_path = Path::new(cert_dir);
 
-    write_svid_to_files(
-        svid,
-        cert_dir_path,
-        config.svid_file_name(),
-        config.svid_key_file_name(),
-    )?;
+    let output = Storage::new(config)?.ensure()?;
+    output.write_certs(svid.cert_chain())?;
+    output.write_key(svid.private_key().as_ref())?;
 
     write_bundle_to_file(bundle, cert_dir_path, config.svid_bundle_file_name())?;
 
     // Log update with SPIFFE ID and certificate expiry
-    let expiry = match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
-        Ok((_, cert)) => cert
-            .validity()
-            .not_after
-            .to_rfc2822()
-            .unwrap_or_else(|_| "unknown".to_string()),
-        Err(_) => "unknown".to_string(),
-    };
     println!(
         "Updated certificate: spiffe_id={}, expires={}",
         svid.spiffe_id(),
-        expiry
+        svid_expiry(svid)
     );
 
     Ok(())
@@ -249,12 +196,21 @@ fPfrHw1nYcPliVB4Zbv8d1w=
     }
 
     #[test]
-    fn test_write_svid_to_files_success() {
+    fn test_storage_write_svid_success() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
         let svid = get_test_svid();
 
-        write_svid_to_files(&svid, cert_dir, "svid.pem", "svid_key.pem").unwrap();
+        let config = Config {
+            cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+            svid_file_name: Some("svid.pem".to_string()),
+            svid_key_file_name: Some("svid_key.pem".to_string()),
+            ..Default::default()
+        };
+        let output = Storage::new(&config).unwrap().ensure().unwrap();
+
+        output.write_certs(svid.cert_chain()).unwrap();
+        output.write_key(svid.private_key().as_ref()).unwrap();
 
         assert!(cert_dir.join("svid.pem").exists());
         assert!(cert_dir.join("svid_key.pem").exists());
