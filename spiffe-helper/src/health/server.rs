@@ -10,8 +10,8 @@ use crate::cli::HealthChecks;
 pub enum HealthCheckServer {
     Disabled,
     Enabled {
-        handle: JoinHandle<Result<()>>,
-        liveness_handle: JoinHandle<()>,
+        server_handle: JoinHandle<Result<()>>,
+        heartbeat_handle: JoinHandle<()>,
         receiver: oneshot::Receiver<Result<()>>,
     },
 }
@@ -31,13 +31,13 @@ impl HealthCheckServer {
         match self {
             HealthCheckServer::Disabled => std::future::pending().await,
             HealthCheckServer::Enabled {
-                handle: _,
-                liveness_handle,
+                server_handle: _,
+                heartbeat_handle,
                 receiver,
             } => match receiver.await {
                 Ok(res) => {
-                    if !liveness_handle.is_finished() {
-                        liveness_handle.abort();
+                    if !heartbeat_handle.is_finished() {
+                        heartbeat_handle.abort();
                     }
                     res
                 }
@@ -51,16 +51,16 @@ impl HealthCheckServer {
         match self {
             HealthCheckServer::Disabled => (),
             HealthCheckServer::Enabled {
-                handle,
-                liveness_handle,
+                server_handle,
+                heartbeat_handle,
                 receiver: _,
             } => {
-                if !handle.is_finished() {
-                    handle.abort();
+                if !server_handle.is_finished() {
+                    server_handle.abort();
                     println!("Health check server stopped");
                 }
-                if !liveness_handle.is_finished() {
-                    liveness_handle.abort();
+                if !heartbeat_handle.is_finished() {
+                    heartbeat_handle.abort();
                 }
             }
         }
@@ -81,7 +81,7 @@ async fn readiness_handler() -> impl IntoResponse {
     StatusCode::OK
 }
 
-async fn liveness_reporter() {
+async fn heartbeat_reporter() {
     let mut liveness_interval = interval(Duration::from_secs(30));
     liveness_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
@@ -109,7 +109,7 @@ async fn start(hc: &HealthChecks) -> Result<HealthCheckServer> {
         .await
         .with_context(|| format!("Failed to bind to {addr}"))?;
 
-    let handle = tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         let res = axum::serve(listener, app)
             .await
             .context("Health check server stopped");
@@ -120,11 +120,11 @@ async fn start(hc: &HealthChecks) -> Result<HealthCheckServer> {
         res
     });
 
-    let liveness_handle = tokio::spawn(liveness_reporter());
+    let heartbeat_handle = tokio::spawn(heartbeat_reporter());
 
     let server = HealthCheckServer::Enabled {
-        handle,
-        liveness_handle,
+        server_handle,
+        heartbeat_handle,
         receiver: rx,
     };
 
