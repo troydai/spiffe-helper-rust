@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use spiffe::X509Source;
 use std::path::Path;
+use std::time::SystemTime;
 use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 
@@ -30,7 +31,9 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
     let health_status = health::create_health_status();
 
     // Initial fetch and write
-    workload_api::fetch_and_write_x509_svid(&source, &local_fs, &health_status).await?;
+    let initial_result = workload_api::fetch_and_write_x509_svid(&source, &local_fs);
+    update_x509_status(&health_status, &initial_result).await;
+    initial_result?;
 
     // Spawn managed child process if configured
     let mut child = if let Some(cmd) = &config.cmd {
@@ -85,7 +88,9 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
                 }
 
                 println!("Received X.509 update notification");
-                if let Err(e) = workload_api::fetch_and_write_x509_svid(&source, &local_fs, &health_status).await {
+                let update_result = workload_api::fetch_and_write_x509_svid(&source, &local_fs);
+                update_x509_status(&health_status, &update_result).await;
+                if let Err(e) = update_result {
                     eprintln!("Failed to handle X.509 update: {e}");
                     continue;
                 }
@@ -139,6 +144,37 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
 
     println!("Daemon shutdown complete");
     result
+}
+
+async fn update_x509_status(health_status: &health::SharedHealthStatus, result: &Result<()>) {
+    let mut status = health_status.write().await;
+    let now = SystemTime::now();
+    let error_msg = result.as_ref().err().map(|e| e.to_string());
+
+    match result {
+        Ok(()) => {
+            status.x509_svid.write_succeeded = true;
+            status.x509_svid.last_success = Some(now);
+            status.x509_svid.last_error = None;
+        }
+        Err(_) => {
+            status.x509_svid.write_succeeded = false;
+            status.x509_svid.last_error = error_msg.clone();
+        }
+    }
+
+    let bundle_status = status.x509_bundle.get_or_insert_with(Default::default);
+    match result {
+        Ok(()) => {
+            bundle_status.write_succeeded = true;
+            bundle_status.last_success = Some(now);
+            bundle_status.last_error = None;
+        }
+        Err(_) => {
+            bundle_status.write_succeeded = false;
+            bundle_status.last_error = error_msg;
+        }
+    }
 }
 
 fn send_renew_signal(

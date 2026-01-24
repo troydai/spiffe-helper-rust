@@ -1,4 +1,4 @@
-use crate::{cli::Config, file_system::LocalFileSystem, health, workload_api};
+use crate::{cli::Config, file_system::LocalFileSystem, workload_api};
 use anyhow::Result;
 use spiffe::X509Source;
 
@@ -11,8 +11,7 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
     let local_fs = LocalFileSystem::new(&config)?.ensure()?;
-    let health_status = health::create_health_status();
-    workload_api::fetch_and_write_x509_svid(&source, &local_fs, &health_status).await?;
+    workload_api::fetch_and_write_x509_svid(&source, &local_fs)?;
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");
     println!("One-shot mode complete");
