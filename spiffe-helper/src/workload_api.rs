@@ -49,6 +49,8 @@ pub fn write_x509_svid_on_update<S: X509CertsWriter>(
     bundle: &X509Bundle,
     cert_writer: &S,
 ) -> Result<()> {
+    // The chain includes intermediates; writing all certs into one PEM file
+    // preserves the full path needed for TLS validation.
     cert_writer.write_certs(svid.cert_chain())?;
     cert_writer.write_key(svid.private_key().as_ref())?;
     cert_writer.write_bundle(bundle)?;
