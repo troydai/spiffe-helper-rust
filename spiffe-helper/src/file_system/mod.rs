@@ -2,13 +2,13 @@
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fs, path::PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use spiffe::bundle::x509::X509Bundle;
 use spiffe::cert::Certificate;
 
-use crate::cli::Config;
+use crate::cli::ResolvedFileSystemConfig;
 
 pub trait X509CertsWriter {
     fn write_certs(&self, certificates: &[Certificate]) -> Result<()>;
@@ -28,28 +28,16 @@ pub struct LocalFileSystem {
 }
 
 impl LocalFileSystem {
-    pub fn new(config: &Config) -> Result<Self> {
-        let cert_dir = config
-            .cert_dir
-            .as_ref()
-            .ok_or_else(|| anyhow!("cert_dir must be configured"))?;
-
-        let output_dir = PathBuf::from_str(cert_dir).with_context(|| {
-            format!(
-                "Failed create path from specified directory path: {}",
-                cert_dir
-            )
-        })?;
-
-        Ok(Self {
-            output_dir: output_dir.clone(),
-            cer_path: output_dir.join(config.svid_file_name()),
-            key_path: output_dir.join(config.svid_key_file_name()),
-            bundle_path: output_dir.join(config.svid_bundle_file_name()),
-            cert_mode: config.cert_file_mode(),
-            key_mode: config.key_file_mode(),
-            bundle_mode: config.cert_file_mode(),
-        })
+    pub fn new(config: ResolvedFileSystemConfig) -> Self {
+        Self {
+            output_dir: config.output_dir,
+            cer_path: config.cert_path,
+            key_path: config.key_path,
+            bundle_path: config.bundle_path,
+            cert_mode: config.cert_mode,
+            key_mode: config.key_mode,
+            bundle_mode: config.bundle_mode,
+        }
     }
 
     pub fn ensure(self) -> Result<Self> {

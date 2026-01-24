@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::cli::health_check::HealthChecks;
 
@@ -34,6 +36,17 @@ pub struct Config {
     pub hint: Option<String>,
     pub omit_expired: Option<bool>,
     pub health_checks: Option<HealthChecks>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedFileSystemConfig {
+    pub output_dir: PathBuf,
+    pub cert_path: PathBuf,
+    pub key_path: PathBuf,
+    pub bundle_path: PathBuf,
+    pub cert_mode: u32,
+    pub key_mode: u32,
+    pub bundle_mode: u32,
 }
 
 impl Config {
@@ -129,6 +142,30 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    pub fn resolve_file_system_config(&self) -> Result<ResolvedFileSystemConfig> {
+        let cert_dir = self
+            .cert_dir
+            .as_ref()
+            .ok_or_else(|| anyhow!("cert_dir must be configured"))?;
+
+        let output_dir = PathBuf::from_str(cert_dir).with_context(|| {
+            format!(
+                "Failed create path from specified directory path: {}",
+                cert_dir
+            )
+        })?;
+
+        Ok(ResolvedFileSystemConfig {
+            output_dir: output_dir.clone(),
+            cert_path: output_dir.join(self.svid_file_name()),
+            key_path: output_dir.join(self.svid_key_file_name()),
+            bundle_path: output_dir.join(self.svid_bundle_file_name()),
+            cert_mode: self.cert_file_mode(),
+            key_mode: self.key_file_mode(),
+            bundle_mode: self.cert_file_mode(),
+        })
     }
 }
 

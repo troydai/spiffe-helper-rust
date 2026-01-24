@@ -10,7 +10,8 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cert_dir must be configured"))?;
 
-    let local_fs = LocalFileSystem::new(&config)?.ensure()?;
+    let file_system_config = config.resolve_file_system_config()?;
+    let local_fs = LocalFileSystem::new(file_system_config).ensure()?;
     workload_api::fetch_and_write_x509_svid(&source, &local_fs)?;
 
     println!("Successfully fetched and wrote X.509 certificate to {cert_dir}");

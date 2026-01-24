@@ -26,7 +26,8 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
 
     println!("Connected to SPIRE agent");
 
-    let local_fs = LocalFileSystem::new(&config)?.ensure()?;
+    let file_system_config = config.resolve_file_system_config()?;
+    let local_fs = LocalFileSystem::new(file_system_config).ensure()?;
 
     // Initial fetch and write
     workload_api::fetch_and_write_x509_svid(&source, &local_fs)?;

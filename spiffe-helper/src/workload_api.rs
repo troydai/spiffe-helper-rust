@@ -206,7 +206,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
             svid_key_file_name: Some("svid_key.pem".to_string()),
             ..Default::default()
         };
-        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+        let file_system_config = config.resolve_file_system_config().unwrap();
+        let local_fs = LocalFileSystem::new(file_system_config).ensure().unwrap();
 
         local_fs.write_certs(svid.cert_chain()).unwrap();
         local_fs.write_key(svid.private_key().as_ref()).unwrap();
@@ -231,7 +232,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
             ..Default::default()
         };
 
-        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+        let file_system_config = config.resolve_file_system_config().unwrap();
+        let local_fs = LocalFileSystem::new(file_system_config).ensure().unwrap();
         local_fs
             .write_bundle(&bundle)
             .expect("Failed to write bundle");
@@ -256,7 +258,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let svid = get_test_svid();
         let bundle = get_test_bundle();
 
-        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+        let file_system_config = config.resolve_file_system_config().unwrap();
+        let local_fs = LocalFileSystem::new(file_system_config).ensure().unwrap();
         let result = write_x509_svid_on_update(&svid, &bundle, &local_fs);
         assert!(result.is_ok());
 
