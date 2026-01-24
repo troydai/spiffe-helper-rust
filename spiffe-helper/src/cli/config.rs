@@ -1346,6 +1346,20 @@ mod tests {
     }
 
     #[test]
+    fn test_config_cert_key_file_mode_defaults_and_overrides() {
+        let mut config = Config::default();
+
+        assert_eq!(config.cert_file_mode(), 0o644);
+        assert_eq!(config.key_file_mode(), 0o600);
+
+        config.cert_file_mode = Some("0640".to_string());
+        config.key_file_mode = Some("0644".to_string());
+
+        assert_eq!(config.cert_file_mode(), 0o640);
+        assert_eq!(config.key_file_mode(), 0o644);
+    }
+
+    #[test]
     fn test_is_daemon_mode_defaults_to_true() {
         let config = Config::default();
         assert!(config.is_daemon_mode());
