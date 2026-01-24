@@ -135,13 +135,16 @@ impl X509CertsWriter for LocalFileSystem {
             .with_context(|| format!("Failed to write bundle to {}", self.bundle_path.display()))?;
 
         #[cfg(unix)]
-        fs::set_permissions(&self.bundle_path, fs::Permissions::from_mode(self.bundle_mode))
-            .with_context(|| {
-                format!(
-                    "Failed to set permissions on bundle file {}",
-                    self.bundle_path.display()
-                )
-            })?;
+        fs::set_permissions(
+            &self.bundle_path,
+            fs::Permissions::from_mode(self.bundle_mode),
+        )
+        .with_context(|| {
+            format!(
+                "Failed to set permissions on bundle file {}",
+                self.bundle_path.display()
+            )
+        })?;
 
         Ok(())
     }

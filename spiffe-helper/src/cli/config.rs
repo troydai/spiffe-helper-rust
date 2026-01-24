@@ -89,14 +89,14 @@ impl Config {
         self.jwt_bundle_file_mode
             .as_deref()
             .and_then(|m| parse_file_mode(m).ok())
-            .unwrap_or(0o644)
+            .unwrap_or(0o600)
     }
 
     pub fn jwt_svid_file_mode(&self) -> u32 {
         self.jwt_svid_file_mode
             .as_deref()
             .and_then(|m| parse_file_mode(m).ok())
-            .unwrap_or(0o644)
+            .unwrap_or(0o600)
     }
 
     /// Validates required configuration fields based on the operation mode.
@@ -1329,6 +1329,20 @@ mod tests {
 
         assert_eq!(config.svid_file_name(), "custom.pem");
         assert_eq!(config.svid_key_file_name(), "custom_key.pem");
+    }
+
+    #[test]
+    fn test_config_jwt_file_mode_defaults_and_overrides() {
+        let mut config = Config::default();
+
+        assert_eq!(config.jwt_bundle_file_mode(), 0o600);
+        assert_eq!(config.jwt_svid_file_mode(), 0o600);
+
+        config.jwt_bundle_file_mode = Some("0640".to_string());
+        config.jwt_svid_file_mode = Some("0644".to_string());
+
+        assert_eq!(config.jwt_bundle_file_mode(), 0o640);
+        assert_eq!(config.jwt_svid_file_mode(), 0o644);
     }
 
     #[test]
