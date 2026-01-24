@@ -21,7 +21,7 @@ pub struct LocalFileSystem {
     output_dir: PathBuf, // from the cert_dir in the config
     cer_path: PathBuf,
     key_path: PathBuf,
-    bundle_path: PathBuf,
+    bundle_path: Option<PathBuf>,
     cert_mode: u32,
     key_mode: u32,
     bundle_mode: u32,
@@ -45,7 +45,9 @@ impl LocalFileSystem {
             output_dir: output_dir.clone(),
             cer_path: output_dir.join(config.svid_file_name()),
             key_path: output_dir.join(config.svid_key_file_name()),
-            bundle_path: output_dir.join(config.svid_bundle_file_name()),
+            bundle_path: config
+                .svid_bundle_file_name()
+                .map(|name| output_dir.join(name)),
             cert_mode: config.cert_file_mode(),
             key_mode: config.key_file_mode(),
             bundle_mode: config.cert_file_mode(),
@@ -119,6 +121,10 @@ impl X509CertsWriter for LocalFileSystem {
     }
 
     fn write_bundle(&self, bundle: &X509Bundle) -> Result<()> {
+        let Some(bundle_path) = &self.bundle_path else {
+            return Ok(());
+        };
+
         let bundle_pem = bundle
             .authorities()
             .iter()
@@ -131,20 +137,17 @@ impl X509CertsWriter for LocalFileSystem {
             .collect::<Vec<_>>()
             .join("\n");
 
-        fs::write(&self.bundle_path, bundle_pem)
-            .with_context(|| format!("Failed to write bundle to {}", self.bundle_path.display()))?;
+        fs::write(bundle_path, bundle_pem)
+            .with_context(|| format!("Failed to write bundle to {}", bundle_path.display()))?;
 
         #[cfg(unix)]
-        fs::set_permissions(
-            &self.bundle_path,
-            fs::Permissions::from_mode(self.bundle_mode),
-        )
-        .with_context(|| {
-            format!(
-                "Failed to set permissions on bundle file {}",
-                self.bundle_path.display()
-            )
-        })?;
+        fs::set_permissions(bundle_path, fs::Permissions::from_mode(self.bundle_mode))
+            .with_context(|| {
+                format!(
+                    "Failed to set permissions on bundle file {}",
+                    bundle_path.display()
+                )
+            })?;
 
         Ok(())
     }

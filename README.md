@@ -148,12 +148,13 @@ The following configuration options control X.509 certificate fetching:
 - `cert_dir` (string, required for daemon mode): Directory where certificates will be written. If missing in daemon mode, the helper exits with code 1.
 - `svid_file_name` (string, optional): Filename for the X.509 certificate (default: `"svid.pem"`)
 - `svid_key_file_name` (string, optional): Filename for the X.509 private key (default: `"svid_key.pem"`)
+- `svid_bundle_file_name` (string, optional): Filename for the X.509 trust bundle. If unset, the bundle is not written.
 
 #### Behavior
 
 - **Startup**: When daemon mode starts, it immediately attempts to fetch the X.509 certificate and key from the SPIRE agent
 - **Missing config**: If `agent_address` or `cert_dir` is not set in daemon mode, the helper exits with code 1 before fetching
-- **Success**: If fetching succeeds, certificates are written to the configured directory and the daemon continues running
+- **Success**: If fetching succeeds, certificates are written to the configured directory and the daemon continues running. The trust bundle is written only when `svid_bundle_file_name` is configured.
 - **Failure**: If fetching fails (e.g., agent unavailable, connection error), the daemon exits with code 1, ensuring initContainers fail if certificates cannot be obtained
 
 This ensures that certificates are available before the main application container starts, making it suitable for use in Kubernetes initContainers.
@@ -166,6 +167,7 @@ agent_address = "unix:///tmp/agent.sock"
 cert_dir = "/etc/certs"
 svid_file_name = "svid.pem"
 svid_key_file_name = "svid_key.pem"
+svid_bundle_file_name = "svid_bundle.pem"
 
 health_checks {
     listener_enabled = true

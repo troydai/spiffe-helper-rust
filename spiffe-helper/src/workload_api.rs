@@ -250,6 +250,7 @@ fPfrHw1nYcPliVB4Zbv8d1w=
             cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
             svid_file_name: Some("test_svid.pem".to_string()),
             svid_key_file_name: Some("test_key.pem".to_string()),
+            svid_bundle_file_name: Some("svid_bundle.pem".to_string()),
             ..Default::default()
         };
 
@@ -263,6 +264,30 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(cert_dir.join("test_svid.pem").exists());
         assert!(cert_dir.join("test_key.pem").exists());
         assert!(cert_dir.join("svid_bundle.pem").exists());
+    }
+
+    #[test]
+    fn test_write_x509_svid_on_update_skips_bundle_when_unconfigured() {
+        let temp_dir = TempDir::new().unwrap();
+        let cert_dir = temp_dir.path();
+
+        let config = Config {
+            cert_dir: Some(cert_dir.to_str().unwrap().to_string()),
+            svid_file_name: Some("test_svid.pem".to_string()),
+            svid_key_file_name: Some("test_key.pem".to_string()),
+            ..Default::default()
+        };
+
+        let svid = get_test_svid();
+        let bundle = get_test_bundle();
+
+        let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
+        let result = write_x509_svid_on_update(&svid, &bundle, &local_fs);
+        assert!(result.is_ok());
+
+        assert!(cert_dir.join("test_svid.pem").exists());
+        assert!(cert_dir.join("test_key.pem").exists());
+        assert!(!cert_dir.join("svid_bundle.pem").exists());
     }
 
     #[test]

@@ -48,10 +48,8 @@ impl Config {
     }
 
     #[must_use]
-    pub fn svid_bundle_file_name(&self) -> &str {
-        self.svid_bundle_file_name
-            .as_deref()
-            .unwrap_or("svid_bundle.pem")
+    pub fn svid_bundle_file_name(&self) -> Option<&str> {
+        self.svid_bundle_file_name.as_deref()
     }
 
     pub fn agent_address(&self) -> Result<&str> {
@@ -126,6 +124,10 @@ impl Config {
                 "cert_dir must be configured for {mode_name} mode.\n\
                  Set it in your config file: cert_dir = \"/path/to/certs\""
             );
+        }
+
+        if let Some(name) = self.svid_bundle_file_name.as_deref() {
+            validate_file_name("svid_bundle_file_name", name)?;
         }
 
         Ok(())
@@ -410,6 +412,24 @@ pub fn parse_file_mode(mode_str: &str) -> Result<u32> {
     }
 
     Ok(mode)
+}
+
+fn validate_file_name(field: &str, value: &str) -> Result<()> {
+    const MAX_FILENAME_LEN: usize = 255;
+
+    if value.is_empty() {
+        anyhow::bail!("{field} must not be empty");
+    }
+
+    if value.contains('/') || value.contains('\\') {
+        anyhow::bail!("{field} must be a filename without path separators");
+    }
+
+    if value.len() > MAX_FILENAME_LEN {
+        anyhow::bail!("{field} must be {MAX_FILENAME_LEN} characters or fewer");
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1148,6 +1168,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_hcl_value_to_config_includes_bundle_file_name() {
+        let hcl_str = r#"
+            cert_dir = "/etc/certs"
+            svid_bundle_file_name = "bundle.pem"
+        "#;
+        let value = parse_hcl_value(hcl_str);
+
+        let config = parse_hcl_value_to_config(&value).unwrap();
+        assert_eq!(config.svid_bundle_file_name, Some("bundle.pem".to_string()));
+    }
+
+    #[test]
     fn test_parse_hcl_value_to_config_empty() {
         // Arrange
         let hcl_str = r"
@@ -1478,5 +1510,40 @@ mod tests {
 
         config.daemon_mode = Some(false);
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_config_rejects_invalid_bundle_file_name() {
+        let config = Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: Some("/tmp/certs".to_string()),
+            svid_bundle_file_name: Some("nested/bundle.pem".to_string()),
+            ..Default::default()
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("svid_bundle_file_name"));
+    }
+
+    #[test]
+    fn test_validate_config_rejects_too_long_bundle_file_name() {
+        let long_name = "a".repeat(256);
+        let config = Config {
+            agent_address: Some("unix:///tmp/agent.sock".to_string()),
+            cert_dir: Some("/tmp/certs".to_string()),
+            svid_bundle_file_name: Some(long_name),
+            ..Default::default()
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("svid_bundle_file_name"));
     }
 }

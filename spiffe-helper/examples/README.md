@@ -12,7 +12,7 @@ cert_dir = "./certs"
 ```
 
 In this mode:
-1. `spiffe-helper` fetches the SVID and trust bundle from the SPIRE agent.
+1. `spiffe-helper` fetches the SVID and, when configured, the trust bundle from the SPIRE agent.
 2. It writes them to the specified `cert_dir`.
 3. It keeps them renewed automatically.
 4. No signals are sent, and no child processes are managed.
