@@ -60,7 +60,7 @@ make load-images     # Load Docker images into kind cluster
 ### Source Structure (src/)
 
 - **main.rs**: Entry point with CLI argument parsing (clap), daemon/one-shot mode selection, health check HTTP server (axum), and SIGTERM signal handling
-- **config.rs**: HCL configuration file parser using hcl-rs crate, defines `Config` and `HealthChecks` structs
+- **config.rs**: HCL configuration file parser using hcl-rs crate, defines `Config` and `HealthChecksConfig` structs
 - **workload_api.rs**: SPIFFE Workload API client that fetches X.509 SVIDs from the SPIRE agent with retry logic and exponential backoff
 
 ### Key Dependencies
