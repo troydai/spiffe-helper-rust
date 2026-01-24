@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use crate::cli::health_check::HealthChecks;
+use crate::cli::health_check::HealthChecksConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtSvid {
@@ -35,7 +35,7 @@ pub struct Config {
     pub jwt_svid_file_mode: Option<String>,
     pub hint: Option<String>,
     pub omit_expired: Option<bool>,
-    pub health_checks: Option<HealthChecks>,
+    pub health_checks: Option<HealthChecksConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -367,9 +367,9 @@ fn extract_string_array(val: &hcl::Value) -> anyhow::Result<Option<Vec<String>>>
 /// extract the health check configuration
 ///
 /// The default port is 8080.
-fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks>> {
+fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecksConfig>> {
     if let Some(map) = val.as_object() {
-        let mut retval = HealthChecks {
+        let mut retval = HealthChecksConfig {
             listener_enabled: false,
             bind_port: 8080,
             liveness_path: None,
@@ -382,7 +382,7 @@ fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecks
 
         // short circuit when health check is not enabled
         if !retval.listener_enabled {
-            return Ok(Some(retval));
+            return Ok(None);
         }
 
         if let Some(v) = map.get("bind_port") {
@@ -1037,11 +1037,7 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        let health_checks = result.unwrap().unwrap();
-        assert!(!health_checks.listener_enabled);
-        assert_eq!(health_checks.bind_port, 8080); // default
-        assert_eq!(health_checks.liveness_path, None);
-        assert_eq!(health_checks.readiness_path, None);
+        assert!(result.unwrap().is_none());
     }
 
     #[test]
@@ -1106,11 +1102,7 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        let health_checks = result.unwrap().unwrap();
-        assert!(!health_checks.listener_enabled);
-        assert_eq!(health_checks.bind_port, 8080);
-        assert_eq!(health_checks.liveness_path, None);
-        assert_eq!(health_checks.readiness_path, None);
+        assert!(result.unwrap().is_none());
     }
 
     #[test]
