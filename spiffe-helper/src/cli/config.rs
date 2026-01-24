@@ -71,6 +71,34 @@ impl Config {
         self.daemon_mode.unwrap_or(true)
     }
 
+    pub fn cert_file_mode(&self) -> u32 {
+        self.cert_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o644)
+    }
+
+    pub fn key_file_mode(&self) -> u32 {
+        self.key_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o600)
+    }
+
+    pub fn jwt_bundle_file_mode(&self) -> u32 {
+        self.jwt_bundle_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o600)
+    }
+
+    pub fn jwt_svid_file_mode(&self) -> u32 {
+        self.jwt_svid_file_mode
+            .as_deref()
+            .and_then(|m| parse_file_mode(m).ok())
+            .unwrap_or(0o600)
+    }
+
     /// Validates required configuration fields based on the operation mode.
     ///
     /// Both daemon and one-shot modes require `agent_address` and `cert_dir` to be configured
@@ -350,9 +378,126 @@ fn extract_port(val: &hcl::Value) -> anyhow::Result<u16> {
     Err(anyhow!("given value is not a number"))
 }
 
+/// Parse file mode from string, supporting octal (0644/644) and decimal notation
+/// Validates that the mode is in the range 0-0777
+pub fn parse_file_mode(mode_str: &str) -> Result<u32> {
+    let trimmed = mode_str.trim();
+
+    let mode = if trimmed.starts_with("0o") || trimmed.starts_with("0O") {
+        u32::from_str_radix(&trimmed[2..], 8)
+            .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
+    } else if trimmed.starts_with('0') && trimmed.len() > 1 {
+        u32::from_str_radix(trimmed, 8)
+            .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
+    } else {
+        let decimal = trimmed
+            .parse::<u32>()
+            .map_err(|e| anyhow!("Invalid file mode '{}': {}", mode_str, e))?;
+        if decimal > 0o777 && trimmed.chars().all(|c| matches!(c, '0'..='7')) {
+            u32::from_str_radix(trimmed, 8)
+                .map_err(|e| anyhow!("Invalid octal file mode '{}': {}", mode_str, e))?
+        } else {
+            decimal
+        }
+    };
+
+    // Validate range (0-0777)
+    if mode > 0o777 {
+        return Err(anyhow!(
+            "File mode '{}' is out of range (must be 0-0777)",
+            mode_str
+        ));
+    }
+
+    Ok(mode)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod file_mode_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_file_mode_octal() {
+            let mode = parse_file_mode("0644").unwrap();
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_with_leading_zero() {
+            let mode = parse_file_mode("0600").unwrap();
+            assert_eq!(mode, 0o600);
+        }
+
+        #[test]
+        fn test_parse_file_mode_decimal() {
+            let mode = parse_file_mode("420").unwrap();
+            assert_eq!(mode, 420);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_without_leading_zero() {
+            let mode = parse_file_mode("644").unwrap();
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_without_leading_zero_key() {
+            let mode = parse_file_mode("600").unwrap();
+            assert_eq!(mode, 0o600);
+        }
+
+        #[test]
+        fn test_parse_file_mode_octal_with_0o_prefix() {
+            let mode = parse_file_mode("0o700").unwrap();
+            assert_eq!(mode, 0o700);
+        }
+
+        #[test]
+        fn test_parse_file_mode_zero() {
+            let mode = parse_file_mode("0").unwrap();
+            assert_eq!(mode, 0);
+        }
+
+        #[test]
+        fn test_parse_file_mode_max_valid() {
+            let mode = parse_file_mode("0777").unwrap();
+            assert_eq!(mode, 0o777);
+        }
+
+        #[test]
+        fn test_parse_file_mode_with_whitespace() {
+            let mode = parse_file_mode("  0644  ").unwrap();
+            assert_eq!(mode, 0o644);
+        }
+
+        #[test]
+        fn test_parse_file_mode_invalid_too_large() {
+            let result = parse_file_mode("1000");
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("out of range"));
+        }
+
+        #[test]
+        fn test_parse_file_mode_invalid_octal() {
+            let result = parse_file_mode("0899");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_parse_file_mode_invalid_string() {
+            let result = parse_file_mode("invalid");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_parse_file_mode_empty() {
+            let result = parse_file_mode("");
+            assert!(result.is_err());
+        }
+    }
 
     fn parse_hcl_value(hcl_str: &str) -> hcl::Value {
         hcl::from_str(hcl_str).expect("Failed to parse HCL")
@@ -1184,6 +1329,34 @@ mod tests {
 
         assert_eq!(config.svid_file_name(), "custom.pem");
         assert_eq!(config.svid_key_file_name(), "custom_key.pem");
+    }
+
+    #[test]
+    fn test_config_jwt_file_mode_defaults_and_overrides() {
+        let mut config = Config::default();
+
+        assert_eq!(config.jwt_bundle_file_mode(), 0o600);
+        assert_eq!(config.jwt_svid_file_mode(), 0o600);
+
+        config.jwt_bundle_file_mode = Some("0640".to_string());
+        config.jwt_svid_file_mode = Some("0644".to_string());
+
+        assert_eq!(config.jwt_bundle_file_mode(), 0o640);
+        assert_eq!(config.jwt_svid_file_mode(), 0o644);
+    }
+
+    #[test]
+    fn test_config_cert_key_file_mode_defaults_and_overrides() {
+        let mut config = Config::default();
+
+        assert_eq!(config.cert_file_mode(), 0o644);
+        assert_eq!(config.key_file_mode(), 0o600);
+
+        config.cert_file_mode = Some("0640".to_string());
+        config.key_file_mode = Some("0644".to_string());
+
+        assert_eq!(config.cert_file_mode(), 0o640);
+        assert_eq!(config.key_file_mode(), 0o644);
     }
 
     #[test]
