@@ -16,6 +16,10 @@ NAMESPACE="spiffe-helper-smoke-test"
 TEST_POD="spiffe-helper-oneshot-test"
 NODE_ALIAS_ID="spiffe://spiffe-helper.local/k8s-cluster/spiffe-helper"
 TEST_SPIFFE_ID="spiffe://spiffe-helper.local/ns/${NAMESPACE}/sa/test-sa"
+INIT_TIMEOUT_SECONDS=90
+POD_CREATE_TIMEOUT_SECONDS=30
+MAIN_READY_TIMEOUT_SECONDS=60
+CERT_DIR="/tmp/certs"
 
 # Source color support
 source "${SCRIPT_DIR}/../utility/colors.sh"
@@ -34,6 +38,30 @@ if [ ! -f "$KUBECONFIG_PATH" ]; then
 fi
 
 export KUBECONFIG="$KUBECONFIG_PATH"
+
+cleanup() {
+    kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
+    kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
+}
+
+print_diagnostics() {
+    echo -e "${COLOR_YELLOW}Diagnostics:${COLOR_RESET}"
+    set +e
+    kubectl get pod -n "$NAMESPACE" "$TEST_POD" -o wide 2>&1 | tail -20
+    kubectl describe pod -n "$NAMESPACE" "$TEST_POD" 2>&1 | tail -60
+    kubectl logs -n "$NAMESPACE" "$TEST_POD" -c spiffe-helper-oneshot 2>&1 | tail -40
+    kubectl logs -n "$NAMESPACE" "$TEST_POD" -c sleep 2>&1 | tail -40
+    kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- ls -la "$CERT_DIR" 2>&1 | tail -40
+    set -e
+}
+
+exit_with_diagnostics() {
+    local message="$1"
+    echo -e "${COLOR_RED}Error: ${message}${COLOR_RESET}"
+    print_diagnostics
+    cleanup
+    exit 1
+}
 
 echo -e "${COLOR_BRIGHT_BLUE}=== Testing X.509 Certificate Fetching in One-Shot Mode ===${COLOR_RESET}"
 echo ""
@@ -166,11 +194,23 @@ EOF
 
 echo -e "${COLOR_GREEN}  ✓ Test pod created${COLOR_RESET}"
 
+# Wait for pod to appear
+echo -e "${COLOR_GREEN}  Waiting for pod to be created...${COLOR_RESET}"
+pod_start_time=$(date +%s)
+while ! kubectl get pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1; do
+    now=$(date +%s)
+    if [ $((now - pod_start_time)) -ge "$POD_CREATE_TIMEOUT_SECONDS" ]; then
+        exit_with_diagnostics "Pod did not appear within ${POD_CREATE_TIMEOUT_SECONDS}s"
+    fi
+    sleep 1
+done
+
 # Wait for initContainer to complete
 echo ""
 echo -e "${COLOR_GREEN}Waiting for one-shot mode to complete...${COLOR_RESET}"
 INIT_COMPLETED=false
-for i in {1..60}; do
+init_start_time=$(date +%s)
+while true; do
     INIT_READY=$(kubectl get pod -n "$NAMESPACE" "$TEST_POD" -o jsonpath='{.status.initContainerStatuses[0].ready}' 2>/dev/null || echo "false")
     INIT_REASON=$(kubectl get pod -n "$NAMESPACE" "$TEST_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || echo "")
     
@@ -184,34 +224,32 @@ for i in {1..60}; do
     INIT_EXIT_CODE=$(kubectl get pod -n "$NAMESPACE" "$TEST_POD" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")
     
     if [ "$POD_STATUS" = "Failed" ] || [ "$POD_STATUS" = "Error" ] || [ "$INIT_EXIT_CODE" = "1" ]; then
-        echo -e "${COLOR_RED}Error: Pod failed with status: $POD_STATUS, exit code: $INIT_EXIT_CODE${COLOR_RESET}"
-        kubectl logs -n "$NAMESPACE" "$TEST_POD" -c spiffe-helper-oneshot 2>&1 | tail -20
-        kubectl describe pod -n "$NAMESPACE" "$TEST_POD" | tail -30
-        # Cleanup
-        kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-        kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-        exit 1
+        exit_with_diagnostics "Pod failed with status: $POD_STATUS, exit code: $INIT_EXIT_CODE"
+    fi
+
+    now=$(date +%s)
+    if [ $((now - init_start_time)) -ge "$INIT_TIMEOUT_SECONDS" ]; then
+        exit_with_diagnostics "InitContainer did not complete within ${INIT_TIMEOUT_SECONDS}s"
     fi
     
     sleep 1
 done
 
 if [ "$INIT_COMPLETED" != "true" ]; then
-    echo -e "${COLOR_RED}Error: InitContainer did not complete within 60 seconds${COLOR_RESET}"
-    kubectl logs -n "$NAMESPACE" "$TEST_POD" -c spiffe-helper-oneshot 2>&1 | tail -20
-    kubectl describe pod -n "$NAMESPACE" "$TEST_POD" | tail -30
-    # Cleanup
-    kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-    kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-    exit 1
+    exit_with_diagnostics "InitContainer did not complete within ${INIT_TIMEOUT_SECONDS}s"
 fi
 
 # Wait for main container to be ready
 echo -e "${COLOR_GREEN}  Waiting for main container to start...${COLOR_RESET}"
-for i in {1..30}; do
+main_start_time=$(date +%s)
+while true; do
     CONTAINER_READY=$(kubectl get pod -n "$NAMESPACE" "$TEST_POD" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
     if [ "$CONTAINER_READY" = "true" ]; then
         break
+    fi
+    now=$(date +%s)
+    if [ $((now - main_start_time)) -ge "$MAIN_READY_TIMEOUT_SECONDS" ]; then
+        exit_with_diagnostics "Main container not ready within ${MAIN_READY_TIMEOUT_SECONDS}s"
     fi
     sleep 1
 done
@@ -219,48 +257,32 @@ done
 # Verify certificate files exist
 echo ""
 echo -e "${COLOR_GREEN}Verifying certificates exist in pod...${COLOR_RESET}"
-if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- test -f /tmp/certs/svid.pem 2>/dev/null; then
+if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- test -f "$CERT_DIR/svid.pem" 2>/dev/null; then
     echo -e "${COLOR_GREEN}  ✓ Certificate file (svid.pem) exists${COLOR_RESET}"
 else
-    echo -e "${COLOR_RED}  ✗ Certificate file (svid.pem) not found${COLOR_RESET}"
-    kubectl logs -n "$NAMESPACE" "$TEST_POD" -c spiffe-helper-oneshot 2>&1 | tail -20
-    # Cleanup
-    kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-    kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-    exit 1
+    exit_with_diagnostics "Certificate file (svid.pem) not found"
 fi
 
-if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- test -f /tmp/certs/svid_key.pem 2>/dev/null; then
+if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- test -f "$CERT_DIR/svid_key.pem" 2>/dev/null; then
     echo -e "${COLOR_GREEN}  ✓ Private key file (svid_key.pem) exists${COLOR_RESET}"
 else
-    echo -e "${COLOR_RED}  ✗ Private key file (svid_key.pem) not found${COLOR_RESET}"
-    kubectl logs -n "$NAMESPACE" "$TEST_POD" -c spiffe-helper-oneshot 2>&1 | tail -20
-    # Cleanup
-    kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-    kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-    exit 1
+    exit_with_diagnostics "Private key file (svid_key.pem) not found"
 fi
 
 # Verify certificate content using openssl
 echo -e "${COLOR_GREEN}Verifying certificate content using openssl...${COLOR_RESET}"
-if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- openssl x509 -in /tmp/certs/svid.pem -noout -text > /dev/null 2>&1; then
-    echo -e "${COLOR_GREEN}  ✓ Certificate file is valid${COLOR_RESET}"
+if SUBJECT=$(kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- \
+    openssl x509 -in "$CERT_DIR/svid.pem" -noout -subject 2>/dev/null); then
+    echo -e "${COLOR_GREEN}  ✓ Certificate subject: ${SUBJECT}${COLOR_RESET}"
 else
-    echo -e "${COLOR_RED}  ✗ Certificate file is invalid${COLOR_RESET}"
-    # Cleanup
-    kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-    kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-    exit 1
+    exit_with_diagnostics "Certificate file is invalid"
 fi
 
-if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- openssl pkey -in /tmp/certs/svid_key.pem -noout -text > /dev/null 2>&1; then
+if kubectl exec -n "$NAMESPACE" "$TEST_POD" -c sleep -- \
+    openssl pkey -in "$CERT_DIR/svid_key.pem" -noout > /dev/null 2>&1; then
     echo -e "${COLOR_GREEN}  ✓ Private key file is valid${COLOR_RESET}"
 else
-    echo -e "${COLOR_RED}  ✗ Private key file is invalid${COLOR_RESET}"
-    # Cleanup
-    kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-    kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
-    exit 1
+    exit_with_diagnostics "Private key file is invalid"
 fi
 
 # Check logs for one-shot mode completion
@@ -278,8 +300,7 @@ fi
 # Cleanup
 echo ""
 echo -e "${COLOR_GREEN}Cleaning up test pod...${COLOR_RESET}"
-kubectl delete pod -n "$NAMESPACE" "$TEST_POD" > /dev/null 2>&1 || true
-kubectl delete configmap -n "$NAMESPACE" spiffe-helper-oneshot-config > /dev/null 2>&1 || true
+cleanup
 
 echo ""
 echo -e "${COLOR_BRIGHT_GREEN}=== All Tests Passed! ===${COLOR_RESET}"
@@ -290,4 +311,3 @@ echo "  - X.509 certificate fetched from SPIRE agent"
 echo "  - Certificate and key written to configured directory"
 echo "  - One-shot mode exited successfully after certificate fetch"
 echo "  - Certificate files contain valid PEM format"
-
