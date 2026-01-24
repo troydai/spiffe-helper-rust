@@ -27,9 +27,10 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
     println!("Connected to SPIRE agent");
 
     let local_fs = LocalFileSystem::new(&config)?.ensure()?;
+    let health_status = health::create_health_status();
 
     // Initial fetch and write
-    workload_api::fetch_and_write_x509_svid(&source, &local_fs)?;
+    workload_api::fetch_and_write_x509_svid(&source, &local_fs, &health_status).await?;
 
     // Spawn managed child process if configured
     let mut child = if let Some(cmd) = &config.cmd {
@@ -84,7 +85,7 @@ pub async fn run(source: X509Source, config: Config) -> Result<()> {
                 }
 
                 println!("Received X.509 update notification");
-                if let Err(e) = workload_api::fetch_and_write_x509_svid(&source, &local_fs) {
+                if let Err(e) = workload_api::fetch_and_write_x509_svid(&source, &local_fs, &health_status).await {
                     eprintln!("Failed to handle X.509 update: {e}");
                     continue;
                 }

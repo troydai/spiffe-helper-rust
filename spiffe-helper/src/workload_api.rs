@@ -3,9 +3,10 @@ use spiffe::bundle::x509::X509Bundle;
 use spiffe::bundle::BundleSource;
 use spiffe::svid::x509::X509Svid;
 use spiffe::{X509Source, X509SourceBuilder};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use crate::file_system::X509CertsWriter;
+use crate::health::SharedHealthStatus;
 
 fn svid_expiry(svid: &X509Svid) -> String {
     match x509_parser::parse_x509_certificate(svid.leaf().as_ref()) {
@@ -18,9 +19,10 @@ fn svid_expiry(svid: &X509Svid) -> String {
     }
 }
 
-pub fn fetch_and_write_x509_svid<S: X509CertsWriter>(
+pub async fn fetch_and_write_x509_svid<S: X509CertsWriter>(
     source: &X509Source,
     cert_writer: &S,
+    health_status: &SharedHealthStatus,
 ) -> Result<()> {
     let svid = source
         .svid()
@@ -31,7 +33,7 @@ pub fn fetch_and_write_x509_svid<S: X509CertsWriter>(
         .map_err(|e| anyhow::anyhow!("Failed to get bundle: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("No bundle received"))?;
 
-    write_x509_svid_on_update(&svid, &bundle, cert_writer)
+    write_x509_svid_on_update(&svid, &bundle, cert_writer, health_status).await
 }
 
 /// Writes X509 SVID and trust bundle to disk when an update is received from the SPIRE agent.
@@ -43,17 +45,28 @@ pub fn fetch_and_write_x509_svid<S: X509CertsWriter>(
 ///
 /// * `svid` - The updated X509 SVID containing the certificate chain and private key
 /// * `bundle` - The trust bundle containing CA certificates
-/// * `config` - Configuration containing output paths
-pub fn write_x509_svid_on_update<S: X509CertsWriter>(
+/// * `cert_writer` - Writer used to persist certificates and keys
+/// * `health_status` - Shared health status to update after writes
+pub async fn write_x509_svid_on_update<S: X509CertsWriter>(
     svid: &X509Svid,
     bundle: &X509Bundle,
     cert_writer: &S,
+    health_status: &SharedHealthStatus,
 ) -> Result<()> {
     // The chain includes intermediates; writing all certs into one PEM file
     // preserves the full path needed for TLS validation.
-    cert_writer.write_certs(svid.cert_chain())?;
-    cert_writer.write_key(svid.private_key().as_ref())?;
-    cert_writer.write_bundle(bundle)?;
+    let svid_result = (|| {
+        cert_writer.write_certs(svid.cert_chain())?;
+        cert_writer.write_key(svid.private_key().as_ref())?;
+        Ok(())
+    })();
+
+    update_x509_svid_status(health_status, &svid_result).await;
+    svid_result?;
+
+    let bundle_result = cert_writer.write_bundle(bundle);
+    update_x509_bundle_status(health_status, &bundle_result).await;
+    bundle_result?;
 
     // Log update with SPIFFE ID and certificate expiry
     println!(
@@ -63,6 +76,38 @@ pub fn write_x509_svid_on_update<S: X509CertsWriter>(
     );
 
     Ok(())
+}
+
+async fn update_x509_svid_status(health_status: &SharedHealthStatus, result: &Result<()>) {
+    let mut status = health_status.write().await;
+    match result {
+        Ok(()) => {
+            status.x509_svid.write_succeeded = true;
+            status.x509_svid.last_success = Some(SystemTime::now());
+            status.x509_svid.last_error = None;
+        }
+        Err(e) => {
+            status.x509_svid.write_succeeded = false;
+            status.x509_svid.last_error = Some(e.to_string());
+        }
+    }
+}
+
+async fn update_x509_bundle_status(health_status: &SharedHealthStatus, result: &Result<()>) {
+    let mut status = health_status.write().await;
+    let bundle_status = status.x509_bundle.get_or_insert_with(Default::default);
+
+    match result {
+        Ok(()) => {
+            bundle_status.write_succeeded = true;
+            bundle_status.last_success = Some(SystemTime::now());
+            bundle_status.last_error = None;
+        }
+        Err(e) => {
+            bundle_status.write_succeeded = false;
+            bundle_status.last_error = Some(e.to_string());
+        }
+    }
 }
 
 /// Normalizes the agent address to a format accepted by the spiffe crate.
@@ -241,8 +286,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(content.contains("BEGIN CERTIFICATE"));
     }
 
-    #[test]
-    fn test_write_x509_svid_on_update_writes_files() {
+    #[tokio::test]
+    async fn test_write_x509_svid_on_update_writes_files() {
         let temp_dir = TempDir::new().unwrap();
         let cert_dir = temp_dir.path();
 
@@ -257,7 +302,8 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         let bundle = get_test_bundle();
 
         let local_fs = LocalFileSystem::new(&config).unwrap().ensure().unwrap();
-        let result = write_x509_svid_on_update(&svid, &bundle, &local_fs);
+        let health_status = crate::health::create_health_status();
+        let result = write_x509_svid_on_update(&svid, &bundle, &local_fs, &health_status).await;
         assert!(result.is_ok());
 
         assert!(cert_dir.join("test_svid.pem").exists());
@@ -265,13 +311,14 @@ fPfrHw1nYcPliVB4Zbv8d1w=
         assert!(cert_dir.join("svid_bundle.pem").exists());
     }
 
-    #[test]
-    fn test_write_x509_svid_on_update_with_dummy_writer() {
+    #[tokio::test]
+    async fn test_write_x509_svid_on_update_with_dummy_writer() {
         let svid = get_test_svid();
         let bundle = get_test_bundle();
 
         let cert_writer = DummyStorage;
-        let result = write_x509_svid_on_update(&svid, &bundle, &cert_writer);
+        let health_status = crate::health::create_health_status();
+        let result = write_x509_svid_on_update(&svid, &bundle, &cert_writer, &health_status).await;
         assert!(result.is_ok());
     }
 
