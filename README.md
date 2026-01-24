@@ -144,14 +144,15 @@ In daemon mode, spiffe-helper automatically fetches X.509 SVIDs (certificates an
 
 The following configuration options control X.509 certificate fetching:
 
-- `agent_address` (string, required for daemon mode): Address of the SPIRE agent Workload API (e.g., `"unix:///tmp/agent.sock"` or `"unix:///run/spire/sockets/workload_api.sock"`)
-- `cert_dir` (string, required for daemon mode): Directory where certificates will be written
+- `agent_address` (string, required for daemon mode): Address of the SPIRE agent Workload API (e.g., `"unix:///tmp/agent.sock"` or `"unix:///run/spire/sockets/workload_api.sock"`). If missing in daemon mode, the helper exits with code 1.
+- `cert_dir` (string, required for daemon mode): Directory where certificates will be written. If missing in daemon mode, the helper exits with code 1.
 - `svid_file_name` (string, optional): Filename for the X.509 certificate (default: `"svid.pem"`)
 - `svid_key_file_name` (string, optional): Filename for the X.509 private key (default: `"svid_key.pem"`)
 
 #### Behavior
 
 - **Startup**: When daemon mode starts, it immediately attempts to fetch the X.509 certificate and key from the SPIRE agent
+- **Missing config**: If `agent_address` or `cert_dir` is not set in daemon mode, the helper exits with code 1 before fetching
 - **Success**: If fetching succeeds, certificates are written to the configured directory and the daemon continues running
 - **Failure**: If fetching fails (e.g., agent unavailable, connection error), the daemon exits with code 1, ensuring initContainers fail if certificates cannot be obtained
 
