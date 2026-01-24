@@ -4,7 +4,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration, MissedTickBehavior};
 
-use crate::cli::HealthChecks;
+use crate::cli::HealthChecksConfig;
 
 /// A handle to the health check server.
 pub enum HealthCheckServer {
@@ -17,10 +17,16 @@ pub enum HealthCheckServer {
 }
 
 impl HealthCheckServer {
-    pub async fn new(health_checks: Option<&HealthChecks>) -> Result<Self> {
+    pub async fn new(health_checks: Option<&HealthChecksConfig>) -> Result<Self> {
         match health_checks {
             None => Ok(Self::Disabled),
-            Some(hc) => start(hc).await,
+            Some(hc) => {
+                if hc.listener_enabled {
+                    start(hc).await
+                } else {
+                    Ok(Self::Disabled)
+                }
+            }
         }
     }
 
@@ -91,7 +97,7 @@ async fn heartbeat_reporter() {
 }
 
 /// Starts the health check HTTP server if enabled in configuration.
-async fn start(hc: &HealthChecks) -> Result<HealthCheckServer> {
+async fn start(hc: &HealthChecksConfig) -> Result<HealthCheckServer> {
     let (tx, rx) = oneshot::channel();
     let addr = hc.bind_addr();
     let liveness = hc.liveness_path();
