@@ -4,6 +4,20 @@ use std::fs;
 
 use crate::cli::health_check::HealthChecksConfig;
 
+// Default file names for X.509 certificates
+const DEFAULT_SVID_FILE_NAME: &str = "svid.pem";
+const DEFAULT_SVID_KEY_FILE_NAME: &str = "svid_key.pem";
+const DEFAULT_SVID_BUNDLE_FILE_NAME: &str = "svid_bundle.pem";
+
+// Default file modes (octal)
+const DEFAULT_CERT_FILE_MODE: u32 = 0o644;
+const DEFAULT_KEY_FILE_MODE: u32 = 0o600;
+const DEFAULT_JWT_BUNDLE_FILE_MODE: u32 = 0o600;
+const DEFAULT_JWT_SVID_FILE_MODE: u32 = 0o600;
+
+// Default health check port
+pub(crate) const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtSvid {
     pub jwt_audience: String,
@@ -39,19 +53,23 @@ pub struct Config {
 impl Config {
     #[must_use]
     pub fn svid_file_name(&self) -> &str {
-        self.svid_file_name.as_deref().unwrap_or("svid.pem")
+        self.svid_file_name
+            .as_deref()
+            .unwrap_or(DEFAULT_SVID_FILE_NAME)
     }
 
     #[must_use]
     pub fn svid_key_file_name(&self) -> &str {
-        self.svid_key_file_name.as_deref().unwrap_or("svid_key.pem")
+        self.svid_key_file_name
+            .as_deref()
+            .unwrap_or(DEFAULT_SVID_KEY_FILE_NAME)
     }
 
     #[must_use]
     pub fn svid_bundle_file_name(&self) -> &str {
         self.svid_bundle_file_name
             .as_deref()
-            .unwrap_or("svid_bundle.pem")
+            .unwrap_or(DEFAULT_SVID_BUNDLE_FILE_NAME)
     }
 
     pub fn agent_address(&self) -> Result<&str> {
@@ -75,28 +93,28 @@ impl Config {
         self.cert_file_mode
             .as_deref()
             .and_then(|m| parse_file_mode(m).ok())
-            .unwrap_or(0o644)
+            .unwrap_or(DEFAULT_CERT_FILE_MODE)
     }
 
     pub fn key_file_mode(&self) -> u32 {
         self.key_file_mode
             .as_deref()
             .and_then(|m| parse_file_mode(m).ok())
-            .unwrap_or(0o600)
+            .unwrap_or(DEFAULT_KEY_FILE_MODE)
     }
 
     pub fn jwt_bundle_file_mode(&self) -> u32 {
         self.jwt_bundle_file_mode
             .as_deref()
             .and_then(|m| parse_file_mode(m).ok())
-            .unwrap_or(0o600)
+            .unwrap_or(DEFAULT_JWT_BUNDLE_FILE_MODE)
     }
 
     pub fn jwt_svid_file_mode(&self) -> u32 {
         self.jwt_svid_file_mode
             .as_deref()
             .and_then(|m| parse_file_mode(m).ok())
-            .unwrap_or(0o600)
+            .unwrap_or(DEFAULT_JWT_SVID_FILE_MODE)
     }
 
     /// Validates required configuration fields based on the operation mode.
@@ -143,29 +161,7 @@ pub fn parse_hcl_config(path: &std::path::Path) -> Result<Config> {
 }
 
 fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
-    let mut config = Config {
-        agent_address: None,
-        cmd: None,
-        cmd_args: None,
-        pid_file_name: None,
-        cert_dir: None,
-        daemon_mode: None,
-        add_intermediates_to_bundle: None,
-        renew_signal: None,
-        svid_file_name: Some("svid.pem".to_string()),
-        svid_key_file_name: Some("svid_key.pem".to_string()),
-        svid_bundle_file_name: None,
-        jwt_svids: None,
-        jwt_bundle_file_name: None,
-        include_federated_domains: None,
-        cert_file_mode: None,
-        key_file_mode: None,
-        jwt_bundle_file_mode: None,
-        jwt_svid_file_mode: None,
-        hint: None,
-        omit_expired: None,
-        health_checks: None,
-    };
+    let mut config = Config::default();
 
     if let hcl::Value::Object(attrs) = value {
         for (key, val) in attrs {
@@ -195,14 +191,10 @@ fn parse_hcl_value_to_config(value: &hcl::Value) -> Result<Config> {
                     config.renew_signal = extract_string(val)?;
                 }
                 "svid_file_name" => {
-                    if let Some(s) = extract_string(val)? {
-                        config.svid_file_name = Some(s);
-                    }
+                    config.svid_file_name = extract_string(val)?;
                 }
                 "svid_key_file_name" => {
-                    if let Some(s) = extract_string(val)? {
-                        config.svid_key_file_name = Some(s);
-                    }
+                    config.svid_key_file_name = extract_string(val)?;
                 }
                 "svid_bundle_file_name" => {
                     config.svid_bundle_file_name = extract_string(val)?;
@@ -328,13 +320,11 @@ fn extract_string_array(val: &hcl::Value) -> anyhow::Result<Option<Vec<String>>>
 }
 
 /// extract the health check configuration
-///
-/// The default port is 8080.
 fn extract_health_checks(val: &hcl::Value) -> anyhow::Result<Option<HealthChecksConfig>> {
     if let Some(map) = val.as_object() {
         let mut retval = HealthChecksConfig {
             listener_enabled: false,
-            bind_port: 8080,
+            bind_port: DEFAULT_HEALTH_CHECK_PORT,
             liveness_path: None,
             readiness_path: None,
         };
@@ -1155,9 +1145,12 @@ mod tests {
         assert_eq!(config.agent_address, None);
         assert_eq!(config.cmd, None);
         assert_eq!(config.daemon_mode, None);
-        // Defaults
-        assert_eq!(config.svid_file_name, Some("svid.pem".to_string()));
-        assert_eq!(config.svid_key_file_name, Some("svid_key.pem".to_string()));
+        // Raw fields are None, but accessors provide defaults
+        assert_eq!(config.svid_file_name, None);
+        assert_eq!(config.svid_key_file_name, None);
+        // Defaults are provided via accessor methods (single source of truth)
+        assert_eq!(config.svid_file_name(), DEFAULT_SVID_FILE_NAME);
+        assert_eq!(config.svid_key_file_name(), DEFAULT_SVID_KEY_FILE_NAME);
     }
 
     #[test]
