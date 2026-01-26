@@ -43,7 +43,7 @@ pub fn fetch_and_write_x509_svid<S: X509CertsWriter>(
 ///
 /// * `svid` - The updated X509 SVID containing the certificate chain and private key
 /// * `bundle` - The trust bundle containing CA certificates
-/// * `config` - Configuration containing output paths
+/// * `cert_writer` - Writer used to persist certificates and keys
 pub fn write_x509_svid_on_update<S: X509CertsWriter>(
     svid: &X509Svid,
     bundle: &X509Bundle,
